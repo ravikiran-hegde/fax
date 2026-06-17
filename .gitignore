@@ -1,0 +1,11 @@
+settings.json
+*.code-workspace
+__pycache__/
+.conda/
+.DS_Store
+figures/
+*.pdf
+*.png
+*.log
+*.npz
+*.nc
