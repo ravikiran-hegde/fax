@@ -7,8 +7,8 @@ from typing import Optional, Protocol
 import numpy as np
 import xarray as xr
 
-from constants import P0_REF, T0_REF, VMR_REF
-from functional_forms import FunctionalForm, functional_form_registry
+from .constants import P0_REF, T0_REF, VMR_REF
+from .functional_forms import FunctionalForm, functional_form_registry
 
 
 def lnp(p, p0, **_ignored):
@@ -41,18 +41,6 @@ class SingleSpeciesModel(Protocol):
         vmr: np.ndarray,
     ) -> np.ndarray:
         """Return cross-section matrix with shape (levels, frequency)."""
-        ...
-
-    def train(self) -> None:
-        """Build the model, e.g. by fitting coefficients."""
-        ...
-
-    def save(self, path: str) -> None:
-        """Save the model to disk."""
-        ...
-
-    def load(self, path: str) -> None:
-        """Load the model from disk."""
         ...
 
     def cross_section_from_atmds(self, atmds: xr.Dataset) -> xr.DataArray:
@@ -159,7 +147,9 @@ class FunctionalAbsorber(SingleSpeciesModel):
         if reference_xsec is not None:
             reference_ds = self._validate_xsec_dataset(reference_xsec, freq_atol=1e-3)
         else:
-            from utils import calulate_arts_reference, sample_atmospheres
+            from .utils import calulate_arts_reference, sample_atmospheres
+
+            arts_reference_kwargs = training_kwargs.get("arts_reference_kwargs", {})
 
             p_grid, t_grid = sample_atmospheres(**sampling_kwargs)
 
@@ -180,6 +170,7 @@ class FunctionalAbsorber(SingleSpeciesModel):
                 p_grid,
                 t_grid,
                 np.full_like(p_grid, self.config.vmr0),
+                **arts_reference_kwargs,
             )
 
         x_p = self.pressure_var(

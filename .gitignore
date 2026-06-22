@@ -3,6 +3,7 @@ settings.json
 __pycache__/
 .conda/
 .DS_Store
+data/
 figures/
 *.pdf
 *.png

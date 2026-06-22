@@ -6,7 +6,7 @@ import numpy as np
 import xarray as xr
 from numpy.typing import ArrayLike
 
-from constants import KAYSER_TO_HZ
+from .constants import KAYSER_TO_HZ
 
 
 def kayser_to_hz(kaysers):
@@ -19,6 +19,47 @@ def hz_to_kayser(hz):
     return hz / KAYSER_TO_HZ
 
 
+def rad_fun(nu, T):
+    """
+    Computes the FASCOD3/LBLRTM Radiation Function: nu * tanh(nu * h*c^2/ (2 *kB * T))
+
+    Parameters:
+    -----------
+    nu : frequency (in Hz)
+    T  : Temperature (in Kelvin)
+
+    Returns:
+    --------
+    float or numpy.ndarray
+        The calculated radiation function factor.
+    """
+
+    from .constants import CM_TO_M, RADCN2
+    from .utils import hz_to_kayser
+
+    # Calculate XKT and XVIOKT matching the C++/FASCODE logic
+    # XKT = T / radcn2, so XVIOKT = nu / XKT = nu * radcn2 / T
+    kayser_nu = hz_to_kayser(nu)
+    xviokt = (kayser_nu * CM_TO_M * RADCN2) / T
+
+    result = np.zeros(np.broadcast_shapes(nu.shape, T.shape))
+
+    # Low frequency / Rayleigh-Jeans limit
+    m1 = xviokt <= 0.01
+    result[m1] = 0.5 * xviokt[m1] * kayser_nu[m1]
+
+    # Mid-range operational branch
+    m2 = (xviokt > 0.01) & (xviokt <= 10)
+    expvkt = np.expm1(-xviokt[m2])
+    result[m2] = -kayser_nu[m2] * expvkt / (2.0 + expvkt)
+
+    # High frequency / Wien limit
+    m3 = xviokt > 10
+    result[m3] = kayser_nu[m3]
+
+    return result.item() if result.ndim == 0 else result
+
+
 def calulate_arts_reference(
     species: str,
     frequency_grid: ArrayLike,
@@ -29,7 +70,7 @@ def calulate_arts_reference(
 ) -> xr.Dataset:
     """Calculate reference cross-section dataset using ARTS."""
 
-    from arts import ARTSAbsorber
+    from .arts import ARTSAbsorber
 
     absorber = ARTSAbsorber(
         species=species, frequency_grid=frequency_grid, arts_tag=arts_tag

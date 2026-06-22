@@ -1,11 +1,10 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """ARTS-backed absorption adapter with the fastabs API.
 
 This class allows using pyarts SingleSpeciesAbsorption within the same
 `calculate_absorption` interface as the fast models, enabling drop-in
 comparisons and RT runs.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -14,8 +13,8 @@ from typing import Optional, Sequence
 import numpy as np
 import pyarts3 as pyarts
 
-from constants import EPS, VMR_REF
-from single_absorber import AbsorberConfig, SingleSpeciesModel
+from .constants import EPS, VMR_REF
+from .single_absorber import AbsorberConfig, SingleSpeciesModel
 
 LINE_CUTOFF_HZ = 750e9
 PYARTS_VERSION = "3.0.0dev8"
@@ -96,7 +95,7 @@ class ARTSAbsorber(SingleSpeciesModel):
         np.ndarray
             Cross-section array (level, frequency) in m^2
         """
-
+        print("Calculating ARTS cross-sections... with tags", self.config.arts_tag)
         N = pressure.size
         F = self.config.frequency_grid.size
         S = len(self.config.arts_tag)
@@ -124,15 +123,3 @@ class ARTSAbsorber(SingleSpeciesModel):
                 xsec_stack[i, :] += xsec
 
         return xsec_stack
-
-    def train(self) -> None:
-        """No training needed for ARTS absorbers."""
-        pass
-
-    def save(self, path: str) -> None:
-        """No model to save for ARTS absorbers."""
-        pass
-
-    def load(self, path: str) -> None:
-        """No model to load for ARTS absorbers."""
-        pass
