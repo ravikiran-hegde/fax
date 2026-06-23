@@ -37,6 +37,9 @@ def rad_fun(nu, T):
     from .constants import CM_TO_M, RADCN2
     from .utils import hz_to_kayser
 
+    nu = np.asarray(nu, dtype=float)
+    T = np.asarray(T, dtype=float)
+
     # Calculate XKT and XVIOKT matching the C++/FASCODE logic
     # XKT = T / radcn2, so XVIOKT = nu / XKT = nu * radcn2 / T
     kayser_nu = hz_to_kayser(nu)
@@ -73,7 +76,9 @@ def calulate_arts_reference(
     from .arts import ARTSAbsorber
 
     absorber = ARTSAbsorber(
-        species=species, frequency_grid=frequency_grid, arts_tag=arts_tag
+        species=species,
+        frequency_grid=tuple(np.asarray(frequency_grid, dtype=float).tolist()),
+        arts_tag=arts_tag,
     )
 
     xsec = absorber.cross_section(pressure=pressure, temperature=temperature, vmr=vmr)

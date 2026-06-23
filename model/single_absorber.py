@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Protocol
+from typing import Any, Optional
 
 import numpy as np
 import xarray as xr
@@ -29,11 +30,15 @@ class AbsorberConfig:
     frequency_grid: Optional[tuple[float, ...]] = (1012.2305,)
 
 
-class SingleSpeciesModel(Protocol):
-    """Protocol for species cross-section models."""
+class SingleSpeciesModel(ABC):
+    """Abstract base class for species cross-section models."""
 
-    config: "AbsorberConfig"
+    config: Any
 
+    def __init__(self, config: AbsorberConfig):
+        self.config = config
+
+    @abstractmethod
     def cross_section(
         self,
         pressure: np.ndarray,
@@ -59,12 +64,12 @@ class SingleSpeciesModel(Protocol):
 
 @dataclass(frozen=True)
 class FunctionalConfig(AbsorberConfig):
-    p0: float = P0_REF
-    T0: float = T0_REF
-    vmr0: float = VMR_REF
     pressure_form_name: str = "Hinge"
     temperature_form_name: str = "Rational"
     self_scaling: int | float = 0  # for self-broadening effects
+    p0: float = P0_REF
+    T0: float = T0_REF
+    vmr0: float = VMR_REF
 
 
 @dataclass
@@ -83,16 +88,23 @@ class FunctionalAbsorber(SingleSpeciesModel):
     def __init__(
         self,
         species: str,
-        pressure_form_name: str,
-        temperature_form_name: str,
+        pressure_form_name: str = "Hinge",
+        temperature_form_name: str = "Rational",
         p0: float = P0_REF,
         T0: float = T0_REF,
         vmr0: float = VMR_REF,
         frequency_grid: Optional[tuple[float, ...]] = None,
         self_scaling: int | float = 0,
     ) -> None:
-        self.pressure_form = functional_form_registry.get(pressure_form_name)
-        self.temperature_form = functional_form_registry.get(temperature_form_name)
+        pressure_form = functional_form_registry.get(pressure_form_name)
+        temperature_form = functional_form_registry.get(temperature_form_name)
+        if pressure_form is None:
+            raise ValueError(f"Unknown pressure form: {pressure_form_name}")
+        if temperature_form is None:
+            raise ValueError(f"Unknown temperature form: {temperature_form_name}")
+
+        self.pressure_form = pressure_form
+        self.temperature_form = temperature_form
         self.config = FunctionalConfig(
             species=species,
             p0=p0,
@@ -124,6 +136,14 @@ class FunctionalAbsorber(SingleSpeciesModel):
         )
         x_t = self.temperature_var(temperature, self.config.T0)
 
+        return cross_section_from_x_vars(self, x_p, x_t)
+
+    def cross_section_from_x_vars(
+        self,
+        x_p: np.ndarray,
+        x_t: np.ndarray,
+    ) -> np.ndarray:
+        """Return cross-section matrix with shape (levels, frequency) from pre-computed x_p and x_t."""
         p_scale = self.pressure_form.evaluate(x_p, self.coeffs.pressure_coeffs)
         t_scale = self.temperature_form.evaluate(x_t, self.coeffs.temperature_coeffs)
 

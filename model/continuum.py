@@ -36,7 +36,7 @@ from .single_absorber import AbsorberConfig, SingleSpeciesModel
 class ContinuumConfig(AbsorberConfig):
     """Configuration for the continuum absorber."""
 
-    continuum_type: str = ""  # self and/or foreign
+    continuum_type: str = ""  # self or foreign or both
     continuum_model: str = "MT_CKD_4.3"
     data_source: Optional[str] = "./../data/continuum/absco-ref_wv-mt-ckd.nc"
 
@@ -87,6 +87,9 @@ class ContinuumAbsorber(SingleSpeciesModel):
     def _prepare_data(self):
         """Prepare the continuum data on frequency grid"""
 
+        if self.config.data_source is None:
+            raise ValueError("Continuum absorber requires a data_source")
+
         continuum_ds = xr.open_dataset(self.config.data_source)[self._required_data]
 
         # Interpolate the continuum data to the frequency grid
@@ -94,7 +97,7 @@ class ContinuumAbsorber(SingleSpeciesModel):
 
         # add frequency grid as a coordinate
         self._continuum_ds = self._continuum_ds.assign_coords(
-            frequency=self.config.frequency_grid
+            frequency=("frequency", np.asarray(self.config.frequency_grid, dtype=float))
         )
 
 
@@ -114,7 +117,7 @@ class H2OContinuum(ContinuumAbsorber):
         self.config = ContinuumConfig(
             species="H2O",
             frequency_grid=frequency_grid,
-            continuum_type="self and foreign",
+            continuum_type="both",
             data_source=data_source,
         )
 
