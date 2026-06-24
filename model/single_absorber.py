@@ -261,6 +261,37 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
             },
         )
         return ds.expand_dims("species")
+    @classmethod
+    def from_dataset(cls, ds: xr.Dataset) -> FunctionalAbsorber:
+        """Create a FunctionalAbsorber from an xarray Dataset."""
+        config = FunctionalConfig(
+            species=ds.coords["species"].values.item(),
+            pressure_form_name=ds.attrs["pressure_form"],
+            temperature_form_name=ds.attrs["temperature_form"],
+            frequency_grid=ds.coords["frequency"].values,
+            self_scaling=float(ds.self_scaling.values),
+            ref_pressure=float(ds.ref_pressure.values),
+            ref_temperature=float(ds.ref_temperature.values),
+            ref_vmr=float(ds.ref_vmr.values),
+        )
+        coeffs = FunctionalCoeffs(
+            xsec0=ds.xsec0.values,
+            pressure_coeffs=ds.pressure_coeffs.values,
+            temperature_coeffs=ds.temperature_coeffs.values,
+        )
+        absorber = cls(
+            species=config.species,
+            frequency_grid=config.frequency_grid,
+            pressure_form_name=config.pressure_form_name,
+            temperature_form_name=config.temperature_form_name,
+            ref_pressure=config.ref_pressure,
+            ref_temperature=config.ref_temperature,
+            ref_vmr=config.ref_vmr,
+            self_scaling=config.self_scaling,
+        )
+        absorber.coeffs = coeffs
+        return absorber
+    
 
     def save_data(self, path: str | Path) -> None:
         """Save the full model (config + coefficients) to disk."""
@@ -270,9 +301,10 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
     def load_data(self, path: str | Path) -> None:
         """Load the full model (config + coefficients) from disk."""
         model_ds = xr.open_dataset(path)
-        self.config = FunctionalConfig(**model_ds.attrs)
-        self.coeffs.pressure_coeffs = model_ds["pressure_coeffs"].values
-        self.coeffs.temperature_coeffs = model_ds["temperature_coeffs"].values
+        absorber = self.from_dataset(model_ds)
+        self.config = absorber.config
+        self.coeffs = absorber.coeffs
+        
 
     @property
     def file_name(self) -> str:
