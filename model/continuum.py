@@ -173,7 +173,8 @@ class H2OContinuum(ContinuumAbsorber):
     def _prepare_data(self):
         """Prepare the continuum data on frequency grid"""
         self._continuum_ds = xr.merge(
-            [self._self_continuum._continuum_ds, self._foreign_continuum._continuum_ds]
+            [self._self_continuum._continuum_ds, self._foreign_continuum._continuum_ds],
+            compat="no_conflicts",
         )
 
     def cross_section(
