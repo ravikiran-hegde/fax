@@ -13,8 +13,9 @@ from typing import Optional, Sequence
 import numpy as np
 import pyarts3 as pyarts
 
-from .constants import EPS, VMR_REF
-from .single_absorber import AbsorberConfig, SingleSpeciesModel
+from model.abstract_class import T_1D_ARRAYLIKE, AbsorberConfig, SingleSpeciesModel
+
+from .constants import EPS, REF_VMR
 
 LINE_CUTOFF_HZ = 750e9
 PYARTS_VERSION = "3.0.0dev8"
@@ -29,12 +30,12 @@ def species_from_tag(tag: str) -> str:
     return tag.split(",")[0].split("-")[0]
 
 
-@dataclass(frozen=True)
+@dataclass
 class ARTSConfig(AbsorberConfig):
     arts_tag: tuple[str, ...] = ("",)
     cutoff_hz: float | None = LINE_CUTOFF_HZ
     use_self_broadening: bool = True
-    vmr0: float = VMR_REF
+    vmr0: float = REF_VMR
 
 
 class ARTSAbsorber(SingleSpeciesModel):
@@ -48,7 +49,7 @@ class ARTSAbsorber(SingleSpeciesModel):
     def __init__(
         self,
         species: str,
-        frequency_grid: Optional[tuple[float, ...]] = None,
+        frequency_grid: T_1D_ARRAYLIKE,
         arts_tag: Optional[tuple[str, ...]] = None,
     ):
         arts_tag = arts_tag if arts_tag is not None else (species,)
@@ -97,7 +98,7 @@ class ARTSAbsorber(SingleSpeciesModel):
         """
         print("Calculating ARTS cross-sections... with tags", self.config.arts_tag)
         N = pressure.size
-        F = self.config.frequency_grid.size
+        F = len(self.config.frequency_grid)
         S = len(self.config.arts_tag)
         xsec_stack = np.zeros((N, F))
 

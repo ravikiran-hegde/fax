@@ -1,75 +1,44 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import numpy as np
 import xarray as xr
 
-from .constants import P0_REF, T0_REF, VMR_REF
-from .functional_forms import FunctionalForm, functional_form_registry
+from .abstract_class import (
+    T_1D_ARRAYLIKE,
+    AbsorberConfig,
+    SavableModel,
+    SingleSpeciesModel,
+)
+from .constants import REF_PRESSURE, REF_TEMPERATURE, REF_VMR
+from .functional_form import FunctionalForm, functional_form_registry
 
 
-def lnp(p, p0, **_ignored):
-    return np.log(p / p0)
+def lnp(p, ref_pressure, **_ignored):
+    return np.log(p / ref_pressure)
 
 
-def lnp_withself(p, p0, vmr, vmr0, self_scaling):
-    return np.log((p / p0) * (1.0 + vmr * self_scaling) / (1.0 + vmr0 * self_scaling))
+def lnp_withself(p, ref_pressure, vmr, ref_vmr, self_scaling):
+    return np.log(
+        (p / ref_pressure) * (1.0 + vmr * self_scaling) / (1.0 + ref_vmr * self_scaling)
+    )
 
 
-def dT(T, T0):
-    return T - T0
+def dT(T, ref_temperature):
+    return T - ref_temperature
 
 
-@dataclass(frozen=True)
-class AbsorberConfig:
-    species: str = ""
-    frequency_grid: Optional[tuple[float, ...]] = (1012.2305,)
-
-
-class SingleSpeciesModel(ABC):
-    """Abstract base class for species cross-section models."""
-
-    config: Any
-
-    def __init__(self, config: AbsorberConfig):
-        self.config = config
-
-    @abstractmethod
-    def cross_section(
-        self,
-        pressure: np.ndarray,
-        temperature: np.ndarray,
-        vmr: np.ndarray,
-    ) -> np.ndarray:
-        """Return cross-section matrix with shape (levels, frequency)."""
-        ...
-
-    def cross_section_from_atmds(self, atmds: xr.Dataset) -> xr.DataArray:
-        xsec = xr.apply_ufunc(
-            self.cross_section,
-            atmds["pressure"],
-            atmds["temperature"],
-            atmds["vmr"].sel(species=self.config.species),
-            input_core_dims=[[], [], []],  # all are (levels,)
-            output_core_dims=[["frequency"]],  # output adds frequency dim
-            dask="parallelized",  # works with dask arrays too
-            output_dtypes=[float],
-        )
-        return xsec.assign_coords(frequency=self.config.frequency_grid)
-
-
-@dataclass(frozen=True)
+@dataclass
 class FunctionalConfig(AbsorberConfig):
     pressure_form_name: str = "Hinge"
     temperature_form_name: str = "Rational"
     self_scaling: int | float = 0  # for self-broadening effects
-    p0: float = P0_REF
-    T0: float = T0_REF
-    vmr0: float = VMR_REF
+    ref_pressure: float = REF_PRESSURE
+    ref_temperature: float = REF_TEMPERATURE
+    ref_vmr: float = REF_VMR
 
 
 @dataclass
@@ -79,7 +48,7 @@ class FunctionalCoeffs:
     temperature_coeffs: Optional[np.ndarray] = None
 
 
-class FunctionalAbsorber(SingleSpeciesModel):
+class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
     pressure_form: FunctionalForm
     temperature_form: FunctionalForm
     config: "FunctionalConfig"
@@ -88,12 +57,12 @@ class FunctionalAbsorber(SingleSpeciesModel):
     def __init__(
         self,
         species: str,
+        frequency_grid: T_1D_ARRAYLIKE,
         pressure_form_name: str = "Hinge",
         temperature_form_name: str = "Rational",
-        p0: float = P0_REF,
-        T0: float = T0_REF,
-        vmr0: float = VMR_REF,
-        frequency_grid: Optional[tuple[float, ...]] = None,
+        ref_pressure: float = REF_PRESSURE,
+        ref_temperature: float = REF_TEMPERATURE,
+        ref_vmr: float = REF_VMR,
         self_scaling: int | float = 0,
     ) -> None:
         pressure_form = functional_form_registry.get(pressure_form_name)
@@ -107,9 +76,9 @@ class FunctionalAbsorber(SingleSpeciesModel):
         self.temperature_form = temperature_form
         self.config = FunctionalConfig(
             species=species,
-            p0=p0,
-            T0=T0,
-            vmr0=vmr0,
+            ref_pressure=ref_pressure,
+            ref_temperature=ref_temperature,
+            ref_vmr=ref_vmr,
             frequency_grid=frequency_grid,
             self_scaling=self_scaling,
         )
@@ -129,14 +98,14 @@ class FunctionalAbsorber(SingleSpeciesModel):
         """Return cross-section matrix with shape (levels, frequency)."""
         x_p = self.pressure_var(
             pressure,
-            self.config.p0,
+            self.config.ref_pressure,
             vmr=vmr,
-            vmr0=self.config.vmr0,
+            ref_vmr=self.config.ref_vmr,
             self_scaling=self.config.self_scaling,
         )
-        x_t = self.temperature_var(temperature, self.config.T0)
+        x_t = self.temperature_var(temperature, self.config.ref_temperature)
 
-        return cross_section_from_x_vars(self, x_p, x_t)
+        return self.cross_section_from_x_vars(x_p, x_t)
 
     def cross_section_from_x_vars(
         self,
@@ -174,13 +143,13 @@ class FunctionalAbsorber(SingleSpeciesModel):
             p_grid, t_grid = sample_atmospheres(**sampling_kwargs)
 
             p_grid = (
-                np.append(p_grid, [self.config.p0])
-                if self.config.p0 not in p_grid
+                np.append(p_grid, [self.config.ref_pressure])
+                if self.config.ref_pressure not in p_grid
                 else p_grid
             )
             t_grid = (
-                np.append(t_grid, [self.config.T0])
-                if self.config.T0 not in t_grid
+                np.append(t_grid, [self.config.ref_temperature])
+                if self.config.ref_temperature not in t_grid
                 else t_grid
             )
 
@@ -189,29 +158,35 @@ class FunctionalAbsorber(SingleSpeciesModel):
                 self.config.frequency_grid,
                 p_grid,
                 t_grid,
-                np.full_like(p_grid, self.config.vmr0),
+                np.full_like(p_grid, self.config.ref_vmr),
                 **arts_reference_kwargs,
             )
 
         x_p = self.pressure_var(
             reference_ds["pressure"].values,
-            self.config.p0,
+            self.config.ref_pressure,
             vmr=reference_ds["vmr"].values,
-            vmr0=self.config.vmr0,
+            ref_vmr=self.config.ref_vmr,
             self_scaling=self.config.self_scaling,
         )
-        x_t = self.temperature_var(reference_ds["temperature"].values, self.config.T0)
+        x_t = self.temperature_var(
+            reference_ds["temperature"].values, self.config.ref_temperature
+        )
 
         self.coeffs.xsec0 = (
             reference_ds["xsec"]
-            .sel(pressure=self.config.p0, temperature=self.config.T0)
+            .sel(
+                pressure=self.config.ref_pressure,
+                temperature=self.config.ref_temperature,
+            )
             .values
         )
 
         reference_ds["norm_lnxsec"] = np.log(
             reference_ds["xsec"]
             / reference_ds["xsec"].sel(
-                pressure=self.config.p0, temperature=self.config.T0
+                pressure=self.config.ref_pressure,
+                temperature=self.config.ref_temperature,
             )
         )
 
@@ -247,30 +222,65 @@ class FunctionalAbsorber(SingleSpeciesModel):
 
             return rss
 
-    def save(self, path: str) -> None:
-        """Save the full model (config + coefficients) to disk."""
-        model_ds = xr.Dataset(
-            data_vars={
-                "pressure_coeffs": (["pressure_coeff"], self.coeffs.pressure_coeffs),
+    def to_dataset(self) -> xr.Dataset:
+
+        ds = xr.Dataset(
+            {
+                "xsec0": (("frequency",), self.coeffs.xsec0),
+                "pressure_coeffs": (
+                    ("p_order", "frequency"),
+                    self.coeffs.pressure_coeffs,
+                ),
                 "temperature_coeffs": (
-                    ["temperature_coeff"],
+                    ("t_order", "frequency"),
                     self.coeffs.temperature_coeffs,
                 ),
+                "ref_pressure": ((), self.config.ref_pressure),
+                "ref_temperature": ((), self.config.ref_temperature),
+                "ref_vmr": ((), self.config.ref_vmr),
+                "self_scaling": ((), float(self.config.self_scaling)),
             },
             coords={
-                "pressure_coeff": self.pressure_form.coefficient_names,
-                "temperature_coeff": self.temperature_form.coefficient_names,
+                "frequency": self.config.frequency_grid,
+                "p_order": (
+                    self.pressure_form.coefficient_names()
+                    if self.coeffs.pressure_coeffs is not None
+                    else 0
+                ),
+                "t_order": (
+                    self.temperature_form.coefficient_names()
+                    if self.coeffs.temperature_coeffs is not None
+                    else 0
+                ),
+                "species": self.config.species,
+            },
+            attrs={
+                "pressure_form": self.config.pressure_form_name,
+                "temperature_form": self.config.temperature_form_name,
+                "model_class": self.class_name,
             },
         )
-        model_ds.attrs.update(vars(self.config))
+        return ds.expand_dims("species")
+
+    def save_data(self, path: str | Path) -> None:
+        """Save the full model (config + coefficients) to disk."""
+        model_ds = self.to_dataset()
         model_ds.to_netcdf(path)
 
-    def load(self, path: str) -> None:
+    def load_data(self, path: str | Path) -> None:
         """Load the full model (config + coefficients) from disk."""
         model_ds = xr.open_dataset(path)
         self.config = FunctionalConfig(**model_ds.attrs)
         self.coeffs.pressure_coeffs = model_ds["pressure_coeffs"].values
         self.coeffs.temperature_coeffs = model_ds["temperature_coeffs"].values
+
+    @property
+    def file_name(self) -> str:
+        return f"{self.config.species}_{self.class_name}.nc"
+
+    @property
+    def class_name(self) -> str:
+        return f"{self.config.pressure_form_name}_{self.config.temperature_form_name}"
 
     def _validate_xsec_dataset(
         self,
@@ -309,12 +319,14 @@ class FunctionalAbsorber(SingleSpeciesModel):
             if not np.allclose(ds_freq, freq_grid, atol=freq_atol):
                 raise ValueError("Frequency grid does not match expected grid")
 
-        # check if p0 and T0 are in the dataset
-        if self.config.p0 not in source.coords["pressure"].values:
-            raise ValueError(f"Reference pressure p0={self.config.p0} not in dataset")
-        if self.config.T0 not in source.coords["temperature"].values:
+        # check if ref_pressure and ref_temperature are in the dataset
+        if self.config.ref_pressure not in source.coords["pressure"].values:
             raise ValueError(
-                f"Reference temperature T0={self.config.T0} not in dataset"
+                f"Reference pressure ref_pressure={self.config.ref_pressure} not in dataset"
+            )
+        if self.config.ref_temperature not in source.coords["temperature"].values:
+            raise ValueError(
+                f"Reference temperature ref_temperature={self.config.ref_temperature} not in dataset"
             )
 
         return source

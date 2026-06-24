@@ -72,7 +72,7 @@ class PolynomialForm(FunctionalForm):
 
     def coefficient_names(self) -> List[str]:
         start = 0 if self.include_bias else 1
-        return [f"c{i}" for i in range(start, self.order + 1)]
+        return [f"p{i}" for i in range(start, self.order + 1)]
 
 
 class HingeForm(FunctionalForm):
@@ -171,9 +171,9 @@ class HingeForm(FunctionalForm):
         return fit  # (4, F)
 
     def coefficient_names(self) -> List[str]:
-        keys = ["c1", "c2", "x_break"]
+        keys = ["h1", "h2", "h_break"]
         if self.include_bias:
-            keys.insert(0, "c0")
+            keys.insert(0, "h0")
         return keys
 
 
@@ -368,8 +368,8 @@ class RationalForm(FunctionalForm):
         return coeffs  # (n_params, F)
 
     def coefficient_names(self) -> List[str]:
-        return [f"a{i}" for i in range(self._n_a)] + [
-            f"b{i}" for i in range(1, self._n_b + 1)
+        return [f"rn{i}" for i in range(self._n_a)] + [
+            f"rd{i}" for i in range(1, self._n_b + 1)
         ]
 
 

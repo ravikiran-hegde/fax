@@ -77,7 +77,7 @@ def calulate_arts_reference(
 
     absorber = ARTSAbsorber(
         species=species,
-        frequency_grid=tuple(np.asarray(frequency_grid, dtype=float).tolist()),
+        frequency_grid=np.asarray(frequency_grid, dtype=float),
         arts_tag=arts_tag,
     )
 

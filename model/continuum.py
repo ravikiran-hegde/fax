@@ -24,15 +24,21 @@ Implemented from  from Mlawer et al., JQSRT 2023 and Fortran90 code that contain
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
 import xarray as xr
 
-from .single_absorber import AbsorberConfig, SingleSpeciesModel
+from .abstract_class import (
+    T_1D_ARRAYLIKE,
+    AbsorberConfig,
+    SavableModel,
+    SingleSpeciesModel,
+)
 
 
-@dataclass(frozen=True)
+@dataclass
 class ContinuumConfig(AbsorberConfig):
     """Configuration for the continuum absorber."""
 
@@ -41,14 +47,15 @@ class ContinuumConfig(AbsorberConfig):
     data_source: Optional[str] = "./../data/continuum/absco-ref_wv-mt-ckd.nc"
 
 
-class ContinuumAbsorber(SingleSpeciesModel):
+class ContinuumAbsorber(SingleSpeciesModel, SavableModel):
     config: ContinuumConfig
+    _continuum_ds: xr.Dataset
 
     def __init__(
         self,
+        species: str,
         continuum_type: str,
-        species: str = "H2O",
-        frequency_grid: Optional[tuple[float, ...]] = None,
+        frequency_grid: T_1D_ARRAYLIKE,
         data_source: Optional[str] = None,
     ):
         self.config = ContinuumConfig(
@@ -95,16 +102,56 @@ class ContinuumAbsorber(SingleSpeciesModel):
         # Interpolate the continuum data to the frequency grid
         self._continuum_ds = self._interpolate_ds_to_frequency_grid(continuum_ds)
 
-        # add frequency grid as a coordinate
-        self._continuum_ds = self._continuum_ds.assign_coords(
-            frequency=("frequency", np.asarray(self.config.frequency_grid, dtype=float))
-        )
+    def to_dataset(self) -> xr.Dataset:
+        """Convert a continuum dataset to be merge-compatible with the functional dataset."""
+
+        cont_ds = self._continuum_ds.copy()
+
+        # rename ref_press / ref_temp to match functional dataset's naming
+        rename_map = {
+            "ref_press": "ref_pressure",
+            "ref_temp": "ref_temperature",
+        }
+        rename_map = {k: v for k, v in rename_map.items() if k in cont_ds.variables}
+        cont_ds = cont_ds.rename(rename_map)
+
+        cont_ds["frequency"] = ("wavenumbers", self.config.frequency_grid)
+        # move every variable on "wavenumbers" onto the existing "frequency" dim
+        if "wavenumbers" in cont_ds.dims:
+            cont_ds = cont_ds.swap_dims({"wavenumbers": "frequency"}).drop_vars(
+                "wavenumbers"
+            )
+
+        species_name = self.config.species
+        cont_ds.attrs["continuum_type"] = self.config.continuum_type
+        cont_ds.attrs["continuum_model"] = self.config.continuum_model
+        cont_ds.attrs["data_source"] = self.config.data_source
+        cont_ds.attrs["model_class"] = self.class_name
+
+        return cont_ds.expand_dims("species").assign_coords(species=[species_name])
+
+    def save_data(self, path: str | Path) -> None:
+        """Save the model to disk."""
+        self._continuum_ds.attrs.update(vars(self.config))
+        self._continuum_ds.to_netcdf(path)
+
+    def load_data(self, path: str | Path) -> None:
+        """Load the model from disk."""
+        self._continuum_ds = xr.open_dataset(path)
+
+    @property
+    def file_name(self) -> str:
+        return f"{self.config.species}_{self.class_name}.nc"
+
+    @property
+    def class_name(self) -> str:
+        return f"{self.config.continuum_type}_continuum_{self.config.continuum_model.replace('.', '_')}"
 
 
 class H2OContinuum(ContinuumAbsorber):
     def __init__(
         self,
-        frequency_grid: Optional[tuple[float, ...]] = None,
+        frequency_grid: T_1D_ARRAYLIKE,
         data_source: Optional[str] = None,
     ):
         self._self_continuum = SelfContinuumAbsorber(
@@ -119,6 +166,14 @@ class H2OContinuum(ContinuumAbsorber):
             frequency_grid=frequency_grid,
             continuum_type="both",
             data_source=data_source,
+        )
+
+        self._prepare_data()
+
+    def _prepare_data(self):
+        """Prepare the continuum data on frequency grid"""
+        self._continuum_ds = xr.merge(
+            [self._self_continuum._continuum_ds, self._foreign_continuum._continuum_ds]
         )
 
     def cross_section(
@@ -136,8 +191,8 @@ class H2OContinuum(ContinuumAbsorber):
 class SelfContinuumAbsorber(ContinuumAbsorber):
     def __init__(
         self,
-        species: str = "H2O",
-        frequency_grid: Optional[tuple[float, ...]] = None,
+        species: str,
+        frequency_grid: T_1D_ARRAYLIKE,
         data_source: Optional[str] = None,
     ):
         self.config = ContinuumConfig(
@@ -182,8 +237,8 @@ class SelfContinuumAbsorber(ContinuumAbsorber):
 class ForeignContinuumAbsorber(ContinuumAbsorber):
     def __init__(
         self,
-        species: str = "H2O",
-        frequency_grid: Optional[tuple[float, ...]] = None,
+        species: str,
+        frequency_grid: T_1D_ARRAYLIKE,
         data_source: Optional[str] = None,
     ):
         self.config = ContinuumConfig(
