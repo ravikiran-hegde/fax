@@ -116,9 +116,14 @@ class ARTSAbsorber(SingleSpeciesModel):
 
             for tag in self.config.arts_tag:
 
-                xsec = self._absorbers[tag](
-                    self.config.frequency_grid, atm
-                ) / atm.number_density(self.config.species)
+                try:
+                    xsec = self._absorbers[tag](
+                        self.config.frequency_grid, atm
+                    ) / atm.number_density(self.config.species)
+                except Exception as e:
+                    print(f"Error calculating cross-section for tag {tag}: {e}")
+                    xsec = np.zeros(F)
+
                 xsec = np.nan_to_num(xsec, nan=EPS, posinf=EPS, neginf=EPS)
                 xsec = np.clip(xsec, EPS, 1e10)
                 xsec_stack[i, :] += xsec
