@@ -99,9 +99,9 @@ arts_absorbers["H2O_continuum"] = ARTSAbsorber(
     ),
 )
 # %%
-from model.xfit import HalocarbonAbsorber
+from model.xfit import CrossFitAbsorber
 
-cfc11_absorber = HalocarbonAbsorber(
+cfc11_absorber = CrossFitAbsorber(
     species="CFC11",
     frequency_grid=frequency_grid,
     data_source="./data/halocarbon/CFC11-XFIT.xml",
@@ -113,7 +113,7 @@ absorbers["CFC11"] = cfc11_absorber
 #     frequency_grid=frequency_grid,
 #     arts_tag=("CFC11-XFIT",),
 # )
-cfc12_absorber = HalocarbonAbsorber(
+cfc12_absorber = CrossFitAbsorber(
     species="CFC12",
     frequency_grid=frequency_grid,
     data_source="./data/halocarbon/CFC12-XFIT.xml",

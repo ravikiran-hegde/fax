@@ -9,8 +9,10 @@ import pyarts3
 import xarray as xr
 from matplotlib import pyplot as plt
 
-from model.utils import kayser_to_hz, hz_to_kayser
+from model.utils import hz_to_kayser, kayser_to_hz
+
 species = "O3"
+
 
 def _extract_band_name(name: str) -> int:
     prefix = name.removesuffix("_coeffs")
@@ -112,6 +114,7 @@ def xsec_xml_to_dataset(xml_path: str | Path) -> xr.Dataset:
         },
     )
 
+
 halocarbon = xsec_xml_to_dataset(
     f"/Users/rk/.cache/arts/arts-cat-data-3.0.0dev8/xsec/{species}-XFIT.xml"
 )
@@ -125,7 +128,7 @@ def compute_xsec(ds, p, T):
     ).T
 
     xsec = p00 + p10 * T + p20 * T**2 + p01 * p
-    
+
     # Check for negative values and remove them without introducing bias, meaning
     # the integral over the spectrum must not change. Not necessary.
     logic = xsec < 0
@@ -144,32 +147,31 @@ def compute_xsec(ds, p, T):
             # scale altered spectrum
             xsec = xsec * w
 
-
     return xsec
 
 
 # %%
 
 from model.arts import ARTSAbsorber
-from model.utils import hz_to_kayser
-
-
-from model.xfit import HalocarbonAbsorber
+from model.xfit import CrossFitAbsorber
 
 lw_ddq_loc = "./data/ddq/DDQ_LW.h5"
 kayser_quadrature_lw = xr.load_dataset(lw_ddq_loc)
 
 sw_ddq_loc = "./data/ddq/DDQ_SW.h5"
 kayser_quadrature_sw = xr.load_dataset(sw_ddq_loc)
-# 
-kayser_quadrature = xr.concat([kayser_quadrature_lw, kayser_quadrature_sw], dim="S").sortby("S")
+#
+kayser_quadrature = xr.concat(
+    [kayser_quadrature_lw, kayser_quadrature_sw], dim="S"
+).sortby("S")
 # kayser_quadrature  = kayser_quadrature_lw
 kayser_grid = kayser_quadrature["S"].values
 frequency_grid = kayser_to_hz(kayser_quadrature["S"].values)
-halocarbon_absorber = HalocarbonAbsorber(
+halocarbon_absorber = CrossFitAbsorber(
     species=species,
     frequency_grid=frequency_grid,
-    data_source=f"./data/halocarbon/{species}-XFIT.xml",)
+    data_source=f"./data/halocarbon/{species}-XFIT.xml",
+)
 
 
 plt.figure(figsize=(10, 6))
@@ -187,19 +189,47 @@ import scipy
 for i in range(len(p)):
     if i == 0:
         xsec = compute_xsec(halocarbon, p=p[i], T=T[i])
-        interp = scipy.interpolate.interp1d(halocarbon.frequency.values, xsec, kind="cubic", fill_value=0, bounds_error=False)
-        xsec_intep  = interp(frequency_grid)
+        interp = scipy.interpolate.interp1d(
+            halocarbon.frequency.values,
+            xsec,
+            kind="cubic",
+            fill_value=0,
+            bounds_error=False,
+        )
+        xsec_intep = interp(frequency_grid)
         arts_xsec = arts_abs.cross_section(
-            pressure=np.array([p[i]]), temperature=np.array([T[i]]), vmr=np.array([0.01])
+            pressure=np.array([p[i]]),
+            temperature=np.array([T[i]]),
+            vmr=np.array([0.01]),
         )[0]
         model_xsec = halocarbon_absorber.cross_section(
-            pressure=np.array([p[i]]), temperature=np.array([T[i]]), vmr=np.array([0.01])
+            pressure=np.array([p[i]]),
+            temperature=np.array([T[i]]),
+            vmr=np.array([0.01]),
         )
 
-        plt.scatter(hz_to_kayser(halocarbon.frequency.values), xsec , s = 0.001, alpha = 0.5, label = "XFIT Data")
+        plt.scatter(
+            hz_to_kayser(halocarbon.frequency.values),
+            xsec,
+            s=0.001,
+            alpha=0.5,
+            label="XFIT Data",
+        )
         # plt.scatter(hz_to_kayser(arts_abs.config.frequency_grid), xsec_intep, s=100, alpha=1, label="XFIT Interp")
-        plt.scatter(hz_to_kayser(arts_abs.config.frequency_grid), arts_xsec, s = 0.01, alpha=0.5, label="ARTS XFIT")
-        plt.scatter(hz_to_kayser(halocarbon_absorber.config.frequency_grid), model_xsec, s=kayser_quadrature["W"].values/10, alpha=0.5, label="Model")
+        plt.scatter(
+            hz_to_kayser(arts_abs.config.frequency_grid),
+            arts_xsec,
+            s=0.01,
+            alpha=0.5,
+            label="ARTS XFIT",
+        )
+        plt.scatter(
+            hz_to_kayser(halocarbon_absorber.config.frequency_grid),
+            model_xsec,
+            s=kayser_quadrature["W"].values / 10,
+            alpha=0.5,
+            label="Model",
+        )
 
 plt.yscale("log")
 # plt.xlim(10,6500)
@@ -214,4 +244,3 @@ plt.legend()
 
 
 # %%
-

@@ -20,15 +20,15 @@ from .abstract_class import (
 
 
 @dataclass
-class HalocarbonConfig(AbsorberConfig):
+class CrossFitConfig(AbsorberConfig):
     """Configuration for the continuum absorber."""
 
     halocarbon_model: str = "XFIT"
     data_source: Optional[str] = "./../data/halocarbon/CFC11_XFIT.xml"
 
 
-class HalocarbonAbsorber(SingleSpeciesModel, SavableModel):
-    config: HalocarbonConfig
+class CrossFitAbsorber(SingleSpeciesModel, SavableModel):
+    config: CrossFitConfig
     _halocarbon_ds: xr.Dataset
 
     def __init__(
@@ -37,7 +37,7 @@ class HalocarbonAbsorber(SingleSpeciesModel, SavableModel):
         frequency_grid: T_1D_ARRAYLIKE,
         data_source: Optional[str] = None,
     ):
-        self.config = HalocarbonConfig(
+        self.config = CrossFitConfig(
             species=species,
             frequency_grid=frequency_grid,
             data_source=data_source,
@@ -125,7 +125,7 @@ class HalocarbonAbsorber(SingleSpeciesModel, SavableModel):
         if not band_names:
             raise ValueError(f"No band coefficient variables found in {xml_path}")
 
-        band_names = sorted(band_names, key=HalocarbonAbsorber._extract_band_name)
+        band_names = sorted(band_names, key=CrossFitAbsorber._extract_band_name)
         frequency_blocks: list[np.ndarray] = []
         coefficient_blocks: list[np.ndarray] = []
         n_frequency: list[int] = []
