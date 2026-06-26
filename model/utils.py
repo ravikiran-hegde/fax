@@ -8,7 +8,6 @@ import xarray as xr
 from numpy.typing import ArrayLike
 
 from model.constants import REF_PRESSURE, REF_TEMPERATURE, REF_VMR
-from model.utils import calulate_arts_reference, sample_atmospheres
 
 from .constants import KAYSER_TO_HZ
 
