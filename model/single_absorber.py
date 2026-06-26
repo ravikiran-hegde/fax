@@ -138,6 +138,7 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
                 setattr(self.config, key, val)
 
         if reference_xsec is not None:
+
             reference_ds = self._validate_xsec_dataset(reference_xsec, freq_atol=1e-3)
         else:
             from .utils import calulate_arts_reference, sample_atmospheres
@@ -165,6 +166,8 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
                 np.full_like(p_grid, self.config.ref_vmr),
                 **arts_reference_kwargs,
             )
+
+            reference_ds = self._validate_xsec_dataset(reference_ds, freq_atol=1e-3)
 
         x_p = self.pressure_var(
             reference_ds["pressure"].values,
@@ -323,9 +326,14 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
         freq_atol: float = 1e-3,
     ) -> xr.Dataset:
 
-        REQUIRED_VARS = {"xsec", "pressure", "temperature"}
-        REQUIRED_DIMS = {"frequency", "case"}
-        REQUIRED_COORDS = {"frequency", "case"}
+        REQUIRED_VARS = {
+            "xsec",
+        }
+        REQUIRED_DIMS = {
+            "frequency",
+            "case",
+        }
+        REQUIRED_COORDS = {"frequency", "case", "pressure", "temperature"}
 
         if isinstance(source, (str, Path)):
             source = xr.open_dataset(source)
@@ -345,7 +353,10 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
         source_coords = {str(coord) for coord in source.coords}
         missing_coords = REQUIRED_COORDS - source_coords
         if missing_coords:
-            raise ValueError(f"Missing coordinates: {missing_coords}")
+            if missing_coords.issubset(set(source.data_vars)):
+                source = source.set_index(case=list(missing_coords))
+            else:
+                raise ValueError(f"Missing coordinates: {missing_coords}")
 
         # check if frequency grid matches expected grid
         freq_grid = self.config.frequency_grid

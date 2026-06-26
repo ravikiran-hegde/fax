@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-from typing import Sequence, Tuple
+from pathlib import Path
+from typing import Any, Sequence, Tuple
 
 import numpy as np
 import xarray as xr
 from numpy.typing import ArrayLike
+
+from model.constants import REF_PRESSURE, REF_TEMPERATURE, REF_VMR
+from model.utils import calulate_arts_reference, sample_atmospheres
 
 from .constants import KAYSER_TO_HZ
 
@@ -63,6 +67,9 @@ def rad_fun(nu, T):
     return result.item() if result.ndim == 0 else result
 
 
+# -----------------------------
+# ARTS related utilities and adapters
+# -----------------------------
 def calulate_arts_reference(
     species: str,
     frequency_grid: ArrayLike,
@@ -93,7 +100,82 @@ def calulate_arts_reference(
             "case": np.arange(pressure.size),
             "frequency": frequency_grid,
         },
-    ).set_index(case=["pressure", "temperature"])
+    )
+
+
+def _slugify(value: Any) -> str:
+    text = (
+        "default"
+        if value is None
+        else "__".join(map(str, value)) if isinstance(value, tuple) else str(value)
+    )
+    text = text.replace("/", "-").replace(" ", "-")
+    return "".join(
+        char if char.isalnum() or char in {"-", "_", "."} else "-" for char in text
+    ).strip("-")
+
+
+def reference_cache_path(
+    species: str,
+    arts_tag: tuple[str, ...] | None = None,
+    cache_dir: str | Path = "./data/reference_cache",
+) -> Path:
+    """Return the on-disk cache path for a reference dataset."""
+
+    cache_dir = Path(cache_dir)
+    tag = _slugify(arts_tag)
+    return cache_dir / f"{species}__{tag}.nc"
+
+
+def ensure_reference_dataset(
+    species: str,
+    frequency_grid: np.ndarray,
+    arts_tag: tuple[str, ...] | None = None,
+    cache_path: str | Path | None = None,
+    sampling_kwargs: dict[str, Any] | None = None,
+    arts_reference_kwargs: dict[str, Any] | None = None,
+    ref_pressure: float = REF_PRESSURE,
+    ref_temperature: float = REF_TEMPERATURE,
+    ref_vmr: float = REF_VMR,
+    force: bool = False,
+) -> Path:
+    """Create or load the reference dataset required by FunctionalAbsorber.train()."""
+
+    if cache_path is None:
+        cache_path = reference_cache_path(species=species, arts_tag=arts_tag)
+    cache_path = Path(cache_path)
+
+    if cache_path.exists() and not force:
+        return cache_path
+
+    sampling_kwargs = {} if sampling_kwargs is None else dict(sampling_kwargs)
+    arts_reference_kwargs = (
+        {} if arts_reference_kwargs is None else dict(arts_reference_kwargs)
+    )
+
+    p_grid, t_grid = sample_atmospheres(**sampling_kwargs)
+
+    has_reference_case = np.any(
+        np.isclose(p_grid, ref_pressure) & np.isclose(t_grid, ref_temperature)
+    )
+    if not has_reference_case:
+        p_grid = np.append(p_grid, ref_pressure)
+        t_grid = np.append(t_grid, ref_temperature)
+
+    reference_ds = calulate_arts_reference(
+        species,
+        frequency_grid,
+        p_grid,
+        t_grid,
+        np.full_like(p_grid, ref_vmr, dtype=float),
+        arts_tag=arts_tag,
+        **arts_reference_kwargs,
+    )
+
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    reference_ds.to_netcdf(cache_path)
+
+    return cache_path
 
 
 # -----------------------------

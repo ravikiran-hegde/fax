@@ -228,6 +228,7 @@ class HalocarbonAbsorber(SingleSpeciesModel, SavableModel):
 
         halo_ds = self._halocarbon_ds.copy()
         halo_ds = halo_ds.drop_dims("band")
+        halo_ds = halo_ds.drop_vars("band_id", errors="ignore")
         halo_ds.attrs["halocarbon_model"] = self.config.halocarbon_model
         halo_ds.attrs["data_source"] = self.config.data_source
         halo_ds.attrs["model_class"] = self.class_name
@@ -249,4 +250,4 @@ class HalocarbonAbsorber(SingleSpeciesModel, SavableModel):
 
     @property
     def class_name(self) -> str:
-        return f"halocarbon_{self.config.halocarbon_model.replace('.', '_')}"
+        return f"{self.config.halocarbon_model.replace('.', '_')}"

@@ -10,7 +10,7 @@ import xarray as xr
 from matplotlib import pyplot as plt
 
 from model.utils import kayser_to_hz, hz_to_kayser
-species = "CFC11"
+species = "O3"
 
 def _extract_band_name(name: str) -> int:
     prefix = name.removesuffix("_coeffs")
@@ -154,7 +154,7 @@ from model.arts import ARTSAbsorber
 from model.utils import hz_to_kayser
 
 
-from model.halocarbon import HalocarbonAbsorber
+from model.xfit import HalocarbonAbsorber
 
 lw_ddq_loc = "./data/ddq/DDQ_LW.h5"
 kayser_quadrature_lw = xr.load_dataset(lw_ddq_loc)
@@ -177,14 +177,18 @@ plt.figure(figsize=(10, 6))
 
 arts_abs = ARTSAbsorber(
     species=species,
-    frequency_grid=frequency_grid,
+    frequency_grid=halocarbon.frequency.values,
     arts_tag=(f"{species}-XFIT",),
 )
 p = [100, 500e2, 1e5]
 T = [250, 273, 300]
+import scipy
+
 for i in range(len(p)):
     if i == 0:
         xsec = compute_xsec(halocarbon, p=p[i], T=T[i])
+        interp = scipy.interpolate.interp1d(halocarbon.frequency.values, xsec, kind="cubic", fill_value=0, bounds_error=False)
+        xsec_intep  = interp(frequency_grid)
         arts_xsec = arts_abs.cross_section(
             pressure=np.array([p[i]]), temperature=np.array([T[i]]), vmr=np.array([0.01])
         )[0]
@@ -193,12 +197,12 @@ for i in range(len(p)):
         )
 
         plt.scatter(hz_to_kayser(halocarbon.frequency.values), xsec , s = 0.001, alpha = 0.5, label = "XFIT Data")
-        # plt.scatter(hz_to_kayser(arts_abs.config.frequency_grid), arts_xsec, s=0.001, alpha=0.5, label="ARTS XFIT")
-        plt.scatter(hz_to_kayser(arts_abs.config.frequency_grid), arts_xsec, kayser_quadrature["W"].values/10, alpha=0.5, label="ARTS XFIT")
+        # plt.scatter(hz_to_kayser(arts_abs.config.frequency_grid), xsec_intep, s=100, alpha=1, label="XFIT Interp")
+        plt.scatter(hz_to_kayser(arts_abs.config.frequency_grid), arts_xsec, s = 0.01, alpha=0.5, label="ARTS XFIT")
         plt.scatter(hz_to_kayser(halocarbon_absorber.config.frequency_grid), model_xsec, s=kayser_quadrature["W"].values/10, alpha=0.5, label="Model")
 
 plt.yscale("log")
-plt.xlim(10,6500)
+# plt.xlim(10,6500)
 plt.xlabel("Frequency (cm^-1)")
 plt.ylabel("Cross Section")
 plt.ylim(1e-35, 1e-20)
