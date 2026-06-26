@@ -68,14 +68,11 @@ class ARTSAbsorber(SingleSpeciesModel):
         )
 
     def _create_absorbers(
-        self, absorption_tags: Sequence[str], cutoff_hz: Optional[float]
+        self,
+        absorption_tags: Sequence[str],
+        cutoff_hz: Optional[float],
     ):
-        """Factory for underlying ARTS absorbers.
-
-        Subclasses (e.g. NoSelfARTSAbsorptionModel) can override to customize
-        the SingleSpeciesAbsorption implementation while keeping all higher-
-        level logic identical.
-        """
+        """Factory for underlying ARTS absorbers."""
         from pyarts3.recipe import SingleSpeciesAbsorption
 
         return {
@@ -96,7 +93,7 @@ class ARTSAbsorber(SingleSpeciesModel):
         np.ndarray
             Cross-section array (level, frequency) in m^2
         """
-        print("Calculating ARTS cross-sections... with tags", self.config.arts_tag)
+        print("Calculating ARTS cross-sections with tags", self.config.arts_tag)
         N = pressure.size
         F = len(self.config.frequency_grid)
         S = len(self.config.arts_tag)
