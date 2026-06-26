@@ -31,6 +31,10 @@ def dT(T, ref_temperature):
     return T - ref_temperature
 
 
+def T_ratio(T, ref_temperature):
+    return T / ref_temperature
+
+
 @dataclass
 class FunctionalConfig(AbsorberConfig):
     pressure_form_name: str = "Hinge"
@@ -121,7 +125,7 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
     def train(
         self,
         reference_xsec: Optional[str] = None,
-        max_iter: int = 3,
+        max_iter: int = 4,
         **training_kwargs,
     ) -> None:
         """Fit coefficients."""
@@ -213,7 +217,7 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
 
             rss = np.sum((reference_ds["norm_lnxsec"].values - p_pred - t_pred) ** 2)
 
-            if iteration > 0 and (prev_rss - rss) / prev_rss < 1e-8:
+            if iteration > 0 and (prev_rss - rss) / prev_rss < 1e-10:
                 break
             prev_rss = rss
 
@@ -261,6 +265,7 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
             },
         )
         return ds.expand_dims("species")
+
     @classmethod
     def from_dataset(cls, ds: xr.Dataset) -> FunctionalAbsorber:
         """Create a FunctionalAbsorber from an xarray Dataset."""
@@ -291,7 +296,6 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
         )
         absorber.coeffs = coeffs
         return absorber
-    
 
     def save_data(self, path: str | Path) -> None:
         """Save the full model (config + coefficients) to disk."""
@@ -304,7 +308,6 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
         absorber = self.from_dataset(model_ds)
         self.config = absorber.config
         self.coeffs = absorber.coeffs
-        
 
     @property
     def file_name(self) -> str:
