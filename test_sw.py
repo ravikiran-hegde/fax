@@ -4,8 +4,7 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
-from create_refrence import 
-from model.utils import kayser_to_hz, ensure_reference_dataset, reference_cache_path
+from model.utils import ensure_reference_dataset, kayser_to_hz, reference_cache_path
 
 sw_ddq_loc = "./data/ddq/DDQ_SW.h5"
 kayser_quadrature_sw = xr.load_dataset(sw_ddq_loc)
@@ -83,7 +82,7 @@ for sp in species.keys():
     )
 
 
-# %%
+# %% continuum absorbers
 from model.continuum import H2OContinuum
 
 h2o_cont = H2OContinuum(
@@ -100,7 +99,7 @@ arts_absorbers["H2O_continuum"] = ARTSAbsorber(
         "H2O-SelfContCKDMT400",
     ),
 )
-# %%
+# %% Halocarbon absorbers
 from model.xfit import HalocarbonAbsorber
 
 cfc11_absorber = HalocarbonAbsorber(
@@ -140,7 +139,26 @@ absorbers["O3-XFIT"] = HalocarbonAbsorber(
 # )
 
 
-# %%
+# %% Solar spectra
+import pyarts3
+
+source = pyarts3.xml.load(
+    "./data/solar_spectra/solar_spectrum_July_2008.xml"
+).to_xarray()
+source = source.rename({"Frequencys": "frequency"})
+source_ds = xr.Dataset(
+    {"spectra": (("frequency",), source.values[:, 0])},
+    coords={"frequency": source.frequency},
+)
+
+solar_spectra = source_ds.interp(frequency=frequency_grid, method="cubic")
+solar_spectra.attrs["description"] = (
+    "Solar spectrum from July 2008, interpolated to model frequency grid"
+)
+solar_spectra.attrs["source"] = "./data/solar_spectra/solar_spectrum_July_2008.xml"
+solar_spectra.attrs["model_class"] = "Solar Spectra"
+
+# %% Save to nc
 
 datatree = xr.DataTree()
 datasets = [absorber.to_dataset() for absorber in absorbers.values()]
@@ -155,7 +173,9 @@ for ds in datasets:
 for key, ds in groups.items():
     datatree[key] = ds
 
-datatree.to_netcdf("./data/ff/test_1_sw.nc", mode="w")
+datatree["Solar_Spectra"] = solar_spectra
+
+# datatree.to_netcdf("./data/ff/test_2_sw.nc", mode="w")
 # %%
 # Test loading data into functional absorber
 # from model.single_absorber import FunctionalAbsorber
