@@ -98,7 +98,13 @@ class ARTSAbsorber(SingleSpeciesModel):
         F = len(self.config.frequency_grid)
         S = len(self.config.arts_tag)
         xsec_stack = np.zeros((N, F))
-
+        default_vmrs = {
+            "N2": 0.7808,
+            "O2": 0.2095,
+            "CO2": 4.2e-4,
+            "H2O": 0.001,
+            "CH4": 1.9e-6,
+        }
         atm = pyarts.arts.AtmPoint()
         for i in range(N):
             atm.pressure = float(pressure[i])
@@ -109,6 +115,12 @@ class ARTSAbsorber(SingleSpeciesModel):
             )
             if vmr_arts == 0.0:
                 continue
+
+            # set default VMRs for other species in the atmosphere; needed foir some CIA in SW
+            for sp in default_vmrs:
+                if sp != self.config.species:
+                    atm[sp] = default_vmrs[sp]
+
             atm[self.config.species] = vmr_arts
 
             for tag in self.config.arts_tag:
