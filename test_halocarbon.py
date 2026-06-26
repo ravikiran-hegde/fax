@@ -10,6 +10,7 @@ import xarray as xr
 from matplotlib import pyplot as plt
 
 from model.utils import kayser_to_hz, hz_to_kayser
+species = "CFC11"
 
 def _extract_band_name(name: str) -> int:
     prefix = name.removesuffix("_coeffs")
@@ -111,8 +112,8 @@ def xsec_xml_to_dataset(xml_path: str | Path) -> xr.Dataset:
         },
     )
 
-cfc11 = xsec_xml_to_dataset(
-    "/Users/rk/.cache/arts/arts-cat-data-3.0.0dev8/xsec/CFC11-XFIT.xml"
+halocarbon = xsec_xml_to_dataset(
+    f"/Users/rk/.cache/arts/arts-cat-data-3.0.0dev8/xsec/{species}-XFIT.xml"
 )
 
 # %%
@@ -138,46 +139,48 @@ kayser_quadrature_lw = xr.load_dataset(lw_ddq_loc)
 
 sw_ddq_loc = "./data/ddq/DDQ_SW.h5"
 kayser_quadrature_sw = xr.load_dataset(sw_ddq_loc)
-
-kayser_quadrature = xr.concat([kayser_quadrature_lw, kayser_quadrature_sw], dim="S")
+# 
+kayser_quadrature = xr.concat([kayser_quadrature_lw, kayser_quadrature_sw], dim="S").sortby("S")
 # kayser_quadrature  = kayser_quadrature_lw
-kayser_grid = kayser_to_hz(kayser_quadrature["S"].values)
-
-cfc11_absorber = HalocarbonAbsorber(
-    species="CFC11",
-    frequency_grid=kayser_grid,
-    data_source="./data/halocarbon/CFC11-XFIT.xml",)
+kayser_grid = kayser_quadrature["S"].values
+frequency_grid = kayser_to_hz(kayser_quadrature["S"].values)
+halocarbon_absorber = HalocarbonAbsorber(
+    species=species,
+    frequency_grid=frequency_grid,
+    data_source=f"./data/halocarbon/{species}-XFIT.xml",)
 
 
 plt.figure(figsize=(10, 6))
 
 
 arts_abs = ARTSAbsorber(
-    species="CFC11",
-    frequency_grid=cfc11.frequency.values,
-    arts_tag=("CFC11-XFIT",),
+    species=species,
+    frequency_grid=frequency_grid,
+    arts_tag=(f"{species}-XFIT",),
 )
 p = [100, 500e2, 1e5]
 T = [250, 273, 300]
 for i in range(len(p)):
-    # if i == 0:
-    xsec = compute_xsec(cfc11, p=p[i], T=T[i])
-    arts_xsec = arts_abs.cross_section(
-        pressure=np.array([p[i]]), temperature=np.array([T[i]]), vmr=np.array([0.01])
-    )[0]
-    model_xsec = cfc11_absorber.cross_section(
-        pressure=np.array([p[i]]), temperature=np.array([T[i]]), vmr=np.array([0.01])
-    )
+    if i == 0:
+        xsec = compute_xsec(halocarbon, p=p[i], T=T[i])
+        arts_xsec = arts_abs.cross_section(
+            pressure=np.array([p[i]]), temperature=np.array([T[i]]), vmr=np.array([0.01])
+        )[0]
+        model_xsec = halocarbon_absorber.cross_section(
+            pressure=np.array([p[i]]), temperature=np.array([T[i]]), vmr=np.array([0.01])
+        )
 
-    # plt.scatter(hz_to_kayser(cfc11.frequency.values), xsec , s = 0.001, alpha = 0.5)
-    plt.scatter(hz_to_kayser(cfc11.frequency.values), arts_xsec, s=0.001, alpha=0.5)
-    plt.scatter(hz_to_kayser(cfc11_absorber.config.frequency_grid), model_xsec, s=kayser_quadrature["W"].values/10, alpha=0.5)
+        plt.scatter(hz_to_kayser(halocarbon.frequency.values), xsec , s = 0.001, alpha = 0.5, label = "XFIT Data")
+        # plt.scatter(hz_to_kayser(arts_abs.config.frequency_grid), arts_xsec, s=0.001, alpha=0.5, label="ARTS XFIT")
+        plt.scatter(hz_to_kayser(arts_abs.config.frequency_grid), arts_xsec, kayser_quadrature["W"].values/10, alpha=0.5, label="ARTS XFIT")
+        plt.scatter(hz_to_kayser(halocarbon_absorber.config.frequency_grid), model_xsec, s=kayser_quadrature["W"].values/10, alpha=0.5, label="Model")
 
 plt.yscale("log")
 plt.xlim(10,6500)
 plt.xlabel("Frequency (cm^-1)")
 plt.ylabel("Cross Section")
 plt.ylim(1e-35, 1e-20)
+plt.legend()
 # %%
 
 

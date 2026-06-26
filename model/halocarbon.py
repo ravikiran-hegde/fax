@@ -52,26 +52,49 @@ class HalocarbonAbsorber(SingleSpeciesModel, SavableModel):
         temperature: np.ndarray,
         vmr: np.ndarray,
     ) -> np.ndarray:
-        p00 = self._halocarbon_ds["p00"].values[:, None]
-        p10 = self._halocarbon_ds["p10"].values[:, None]
-        p01 = self._halocarbon_ds["p01"].values[:, None]
-        p20 = self._halocarbon_ds["p20"].values[:, None]
-        return np.clip(
-            p00 + p10 * temperature + p20 * temperature**2 + p01 * pressure, 0, None
+        p00 = self._halocarbon_ds["p00"].values
+        p10 = self._halocarbon_ds["p10"].values
+        p01 = self._halocarbon_ds["p01"].values
+        p20 = self._halocarbon_ds["p20"].values
+
+        xsec = (
+            p00
+            + p10 * temperature[:, None]
+            + p20 * temperature[:, None] ** 2
+            + p01 * pressure[:, None]
         )
+        # # Check for negative values and remove them without introducing bias, meaning
+        # # the integral over the spectrum must not change. Not necessary.
+        # logic = xsec < 0
+        # if np.sum(logic) > 0:
+
+        #     # original sum over spectrum
+        #     sumX_org = np.sum(xsec)
+
+        #     # remove negative values
+        #     xsec[logic] = 0
+
+        #     if sumX_org >= 0:
+        #         # estimate ratio between altered and original sum of spectrum
+        #         w = sumX_org / np.sum(xsec)
+
+        #         # scale altered spectrum
+        #         xsec = xsec * w
+
+        return xsec.clip(0, None)
 
     def _interpolate_ds_to_frequency_grid(
         self, halocarbon_data: xr.Dataset
     ) -> xr.Dataset:
         """
         Interpolate the halocarbon data to the model's frequency grid using
-        nearest neighbor. Cubic also works but avoided as data has line features and non-uniform.
+        nearest neighbor. Cubic or nearest neighbor?.
         """
         target_nu = np.asarray(self.config.frequency_grid, dtype=float)
 
         interpolated_ds = halocarbon_data.interp(
             frequency=target_nu,
-            method="nearest",
+            method="cubic",
             kwargs={"fill_value": 0.0},
         )
         return interpolated_ds
