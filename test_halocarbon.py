@@ -123,7 +123,29 @@ def compute_xsec(ds, p, T):
     p00, p10, p01, p20 = ds.fit_coefficients.sel(
         coefficient=["p00", "p10", "p01", "p20"]
     ).T
-    return p00 + p10 * T + p20 * T**2 + p01 * p
+
+    xsec = p00 + p10 * T + p20 * T**2 + p01 * p
+    
+    # Check for negative values and remove them without introducing bias, meaning
+    # the integral over the spectrum must not change. Not necessary.
+    logic = xsec < 0
+    if np.sum(logic) > 0:
+
+        # original sum over spectrum
+        sumX_org = np.sum(xsec)
+
+        # remove negative values
+        xsec[logic] = 0
+
+        if sumX_org >= 0:
+            # estimate ratio between altered and original sum of spectrum
+            w = sumX_org / np.sum(xsec)
+
+            # scale altered spectrum
+            xsec = xsec * w
+
+
+    return xsec
 
 
 # %%
