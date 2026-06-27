@@ -4,6 +4,7 @@ __pycache__/
 .conda/
 .DS_Store
 data/
+temp/
 figures/
 *.pdf
 *.png

@@ -140,7 +140,7 @@ for ds in datasets:
 for key, ds in groups.items():
     datatree[key] = ds
 
-datatree.to_netcdf("./data/ff/test_1_lw.nc", mode="w")
+datatree.to_netcdf("./data/ff/test_2_lw.nc", mode="w")
 # %%
 # Test loading data into functional absorber
 # from model.single_absorber import FunctionalAbsorber
