@@ -30,6 +30,7 @@ class CrossFitConfig(AbsorberConfig):
 class CrossFitAbsorber(SingleSpeciesModel, SavableModel):
     config: CrossFitConfig
     _data: xr.Dataset
+    required_data = ["p00", "p10", "p01", "p20"]
 
     def __init__(
         self,
@@ -53,6 +54,8 @@ class CrossFitAbsorber(SingleSpeciesModel, SavableModel):
             )
 
             self._prepare_raw_data()
+
+        self.validate_data()
 
     def cross_section(
         self,
@@ -236,6 +239,21 @@ class CrossFitAbsorber(SingleSpeciesModel, SavableModel):
 
         # Interpolate the coeffs to the frequency grid
         self._data = self._interpolate_ds_to_frequency_grid(data)
+
+    def validate_data(self) -> None:
+        """Validate the continuum data."""
+        missing_vars = [
+            var for var in self.required_data if var not in self._data.variables
+        ]
+        if missing_vars:
+            raise ValueError(
+                f"Missing required variables in continuum dataset: {missing_vars}"
+            )
+
+        if not np.allclose(self._data["frequency"].values, self.config.frequency_grid):
+            raise ValueError(
+                "Frequency grid in dataset does not match the model's frequency grid."
+            )
 
     def to_dataset(self) -> xr.Dataset:
         """Convert a continuum dataset to be merge-compatible with the functional dataset."""
