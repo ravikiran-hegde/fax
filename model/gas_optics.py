@@ -6,7 +6,7 @@ import xarray as xr
 
 from model.abstract_class import SavableModel, SingleSpeciesModel
 from model.continuum import H2OContinuum
-from model.single_absorber import FunctionalAbsorber
+from model.functional import FunctionalAbsorber
 from model.xfit import CrossFitAbsorber
 
 

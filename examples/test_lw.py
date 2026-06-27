@@ -18,7 +18,7 @@ kayser_weights = kayser_quadrature["W"].values
 frequency_grid = kayser_to_hz(kayser_grid)
 
 from model.arts import ARTSAbsorber
-from model.single_absorber import FunctionalAbsorber
+from model.functional import FunctionalAbsorber
 
 # %%
 species = {
