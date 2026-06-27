@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Sequence, Tuple
+from typing import Any, Optional, Sequence, Tuple
 
 import numpy as np
 import xarray as xr
@@ -43,27 +43,59 @@ def rad_fun(nu, T):
     nu = np.asarray(nu, dtype=float)
     T = np.asarray(T, dtype=float)
 
-    # Calculate XKT and XVIOKT matching the C++/FASCODE logic
-    # XKT = T / radcn2, so XVIOKT = nu / XKT = nu * radcn2 / T
     kayser_nu = hz_to_kayser(nu)
-    xviokt = (kayser_nu * CM_TO_M * RADCN2) / T
+    xviokt = (kayser_nu * CM_TO_M * RADCN2) / T  # broadcasts nu/T shapes -> bshape
 
-    result = np.zeros(np.broadcast_shapes(nu.shape, T.shape))
+    bshape = xviokt.shape
+    kayser_nu_b = np.broadcast_to(kayser_nu, bshape)
+
+    result = np.zeros(bshape)
 
     # Low frequency / Rayleigh-Jeans limit
     m1 = xviokt <= 0.01
-    result[m1] = 0.5 * xviokt[m1] * kayser_nu[m1]
+    result[m1] = 0.5 * xviokt[m1] * kayser_nu_b[m1]
 
     # Mid-range operational branch
     m2 = (xviokt > 0.01) & (xviokt <= 10)
     expvkt = np.expm1(-xviokt[m2])
-    result[m2] = -kayser_nu[m2] * expvkt / (2.0 + expvkt)
+    result[m2] = -kayser_nu_b[m2] * expvkt / (2.0 + expvkt)
 
     # High frequency / Wien limit
     m3 = xviokt > 10
-    result[m3] = kayser_nu[m3]
+    result[m3] = kayser_nu_b[m3]
 
     return result.item() if result.ndim == 0 else result
+
+
+def simple_vmr_profile(
+    species: str, pressure: np.ndarray, temperature: Optional[np.ndarray] = None
+) -> np.ndarray:
+    """Return a simple level-wise VMR profile for one species."""
+    pressure = np.asarray(pressure, dtype=float)
+    temperature = (
+        np.asarray(temperature, dtype=float) if temperature is not None else None
+    )
+
+    if "H2O" in species:
+        vmr = np.full_like(pressure, 0.001, dtype=float)
+    elif species == "CO2":
+        vmr = np.full_like(pressure, 4.2e-4, dtype=float)
+    elif species == "O2":
+        vmr = np.full_like(pressure, 0.2095, dtype=float)
+    elif species == "CH4":
+        vmr = np.full_like(pressure, 1.9e-6, dtype=float)
+    elif species == "N2O":
+        vmr = np.full_like(pressure, 3.3e-7, dtype=float)
+    elif species == "N2":
+        vmr = np.full_like(pressure, 0.7808, dtype=float)
+    elif species == "CFC11":
+        vmr = np.full_like(pressure, 2.5e-10, dtype=float)
+    elif species == "CFC12":
+        vmr = np.full_like(pressure, 5.0e-10, dtype=float)
+    else:
+        vmr = np.full_like(pressure, 1e-9, dtype=float)
+
+    return vmr
 
 
 # -----------------------------
