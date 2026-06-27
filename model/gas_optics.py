@@ -46,21 +46,23 @@ class GasOptics:
     def from_datatree(cls, dt: xr.DataTree) -> "GasOptics":
         """Create a GasOptics instance from a datatree."""
         absorbers = {}
-        for model_cls in dt.keys():
-            absorber_cls = absorber_registry.get(model_cls, None)
+        for class_name in dt.keys():
+            absorber_cls = absorber_registry.get(class_name, None)
             if absorber_cls is None:
-                print(f"Unsupported model class {model_cls} in datatree. Skipping.")
+                print(f"Unsupported model class {class_name} in datatree. Skipping.")
             else:
-                ds = dt[model_cls]
+                ds = dt[class_name]
                 for sp in ds.species.values:
                     sp_ds = ds.sel(species=sp)
                     absorber = absorber_cls.from_dataset(sp_ds.to_dataset())
-                    absorbers[str(sp) + model_cls] = absorber
+                    absorbers[str(sp) + "_" + class_name] = absorber
         return cls.from_absorbers(absorbers)
 
     def add_absorber(self, absorber: SingleSpeciesModel) -> None:
         """Add an absorber to the model."""
-        self._absorbers[str(absorber.config.species) + absorber.class_name] = absorber
+        self._absorbers[str(absorber.config.species) + "_" + absorber.class_name] = (
+            absorber
+        )
         self.config.species = (
             self.species
         )  # Update species list to include new absorber

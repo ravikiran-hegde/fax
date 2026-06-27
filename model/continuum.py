@@ -43,30 +43,41 @@ class ContinuumConfig(AbsorberConfig):
     """Configuration for the continuum absorber."""
 
     continuum_type: str = ""  # self or foreign or both
-    continuum_model: str = "MT_CKD_4.3"
+    model: str = "MT_CKD_4.3"
     data_source: Optional[str] = "./../data/continuum/absco-ref_wv-mt-ckd.nc"
 
 
 class ContinuumAbsorber(SingleSpeciesModel, SavableModel):
     config: ContinuumConfig
-    _continuum_ds: xr.Dataset
+    _data: xr.Dataset
 
     def __init__(
         self,
         species: str,
         continuum_type: str,
         frequency_grid: T_1D_ARRAYLIKE,
-        data_source: Optional[str] = None,
+        data_source: Optional[str | xr.Dataset] = None,
     ):
-        self.config = ContinuumConfig(
-            species=species,
-            frequency_grid=frequency_grid,
-            continuum_type=continuum_type,
-            data_source=data_source,
-        )
-
         self._required_data = ["ref_pres", "ref_temp"]
-        self._prepare_data()
+        if data_source is not None and isinstance(data_source, xr.Dataset):
+            self._data = data_source
+            self.config = ContinuumConfig(
+                species=species,
+                frequency_grid=frequency_grid,
+                continuum_type=continuum_type,
+                data_source=self._data.attrs.get("data_source", None),
+            )
+        else:
+            self.config = ContinuumConfig(
+                species=species,
+                frequency_grid=frequency_grid,
+                continuum_type=continuum_type,
+                data_source=data_source,
+            )
+
+            self._prepare_raw_data()
+
+        self._validate_data()
 
     def cross_section(
         self,
@@ -75,88 +86,111 @@ class ContinuumAbsorber(SingleSpeciesModel, SavableModel):
         vmr: np.ndarray,
     ) -> np.ndarray: ...
 
-    def _interpolate_ds_to_frequency_grid(
-        self, continuum_data: xr.Dataset
+    @staticmethod
+    def interpolate_ds_to_frequency_grid(
+        ds: xr.Dataset, output_frequency_grid
     ) -> xr.Dataset:
         """Interpolate the continuum data to the model's frequency grid using
         cubic interpolation (scipy-backed via xarray)."""
         from .utils import hz_to_kayser
 
-        target_nu = np.asarray(hz_to_kayser(self.config.frequency_grid), dtype=float)
+        target_nu = np.asarray(hz_to_kayser(output_frequency_grid), dtype=float)
 
-        interpolated_ds = continuum_data.interp(
+        interpolated_ds = ds.interp(
             wavenumbers=target_nu,
             method="cubic",
             kwargs={"fill_value": 0.0},
         )
         return interpolated_ds
 
-    def _prepare_data(self):
+    def _validate_data(self) -> None:
+        """Validate that the required data is present in the dataset."""
+
+        missing_vars = [
+            var for var in self._required_data if var not in self._data.variables
+        ]
+        if missing_vars:
+            raise ValueError(
+                f"Missing required variables in continuum dataset: {missing_vars}"
+            )
+
+        if not np.allclose(self._data["frequency"].values, self.config.frequency_grid):
+            raise ValueError(
+                "Frequency grid in dataset does not match the model's frequency grid."
+            )
+
+    def _prepare_raw_data(self):
         """Prepare the continuum data on frequency grid"""
 
         if self.config.data_source is None:
             raise ValueError("Continuum absorber requires a data_source")
 
-        continuum_ds = xr.open_dataset(self.config.data_source)[self._required_data]
-
-        # Interpolate the continuum data to the frequency grid
-        self._continuum_ds = self._interpolate_ds_to_frequency_grid(continuum_ds)
-
-    def to_dataset(self) -> xr.Dataset:
-        """Convert a continuum dataset to be merge-compatible with the functional dataset."""
-
-        cont_ds = self._continuum_ds.copy()
+        continuum_ds = xr.open_dataset(self.config.data_source)
 
         # rename ref_press / ref_temp to match functional dataset's naming
         rename_map = {
             "ref_press": "ref_pressure",
             "ref_temp": "ref_temperature",
         }
-        rename_map = {k: v for k, v in rename_map.items() if k in cont_ds.variables}
-        cont_ds = cont_ds.rename(rename_map)
+        rename_map = {
+            k: v for k, v in rename_map.items() if k in continuum_ds.variables
+        }
+        continuum_ds = continuum_ds.rename(rename_map)
 
-        cont_ds["frequency"] = ("wavenumbers", self.config.frequency_grid)
+        # Convert from mBar to Pa and update attributes
+        continuum_ds["ref_pressure"] = continuum_ds["ref_pressure"] * 100
+        continuum_ds["ref_pressure"].attrs["units"] = "Pa"
+
+        # interpolate required variables to the model's frequency grid
+        continuum_ds = self.interpolate_ds_to_frequency_grid(
+            continuum_ds[self._required_data], self.config.frequency_grid
+        )
+
         # move every variable on "wavenumbers" onto the existing "frequency" dim
-        if "wavenumbers" in cont_ds.dims:
-            cont_ds = cont_ds.swap_dims({"wavenumbers": "frequency"}).drop_vars(
-                "wavenumbers"
-            )
+        continuum_ds["frequency"] = ("wavenumbers", self.config.frequency_grid)
+
+        if "wavenumbers" in continuum_ds.dims:
+            continuum_ds = continuum_ds.swap_dims(
+                {"wavenumbers": "frequency"}
+            ).drop_vars("wavenumbers")
 
         species_name = self.config.species
-        cont_ds.attrs["continuum_type"] = self.config.continuum_type
-        cont_ds.attrs["continuum_model"] = self.config.continuum_model
-        cont_ds.attrs["data_source"] = self.config.data_source
-        cont_ds.attrs["model_class"] = self.class_name
+        continuum_ds.attrs["continuum_type"] = self.config.continuum_type
+        continuum_ds.attrs["model"] = self.config.model
+        continuum_ds.attrs["data_source"] = self.config.data_source
+        continuum_ds.attrs["model_class"] = self.class_name
 
-        return cont_ds.expand_dims("species").assign_coords(species=[species_name])
+        continuum_ds = continuum_ds.expand_dims("species").assign_coords(
+            species=[species_name]
+        )
+
+        # Interpolate the continuum data to the frequency grid
+        self._data = continuum_ds
+
+    def to_dataset(self) -> xr.Dataset:
+        """Convert a continuum dataset to be merge-compatible with the functional dataset."""
+        return self._data.copy()
 
     def save_data(self, path: str | Path) -> None:
         """Save the model to disk."""
-        self._continuum_ds.attrs.update(vars(self.config))
-        self._continuum_ds.to_netcdf(path)
+        self._data.attrs.update(vars(self.config))
+        self._data.to_netcdf(path)
 
     def load_data(self, path: str | Path) -> None:
         """Load the model from disk."""
-        self._continuum_ds = xr.open_dataset(path)
+        self._data = xr.open_dataset(path)
 
     @classmethod
     def from_dataset(cls, ds: xr.Dataset) -> "ContinuumAbsorber":
         """Create a ContinuumAbsorber from an xarray Dataset."""
-        config = ContinuumConfig(
-            species=ds.coords["species"].values.item(),
-            frequency_grid=ds.coords["frequency"].values,
-            continuum_type=ds.attrs.get("continuum_type"),
-            continuum_model=ds.attrs.get("continuum_model"),
-            data_source=ds.attrs.get("data_source"),
-        )
 
         absorber = cls(
-            species=config.species,
-            frequency_grid=config.frequency_grid,
-            continuum_type=config.continuum_type,
-            data_source=config.data_source,
+            species=ds.coords["species"].values.item(),
+            frequency_grid=ds.coords["frequency"].values,
+            continuum_type=ds.attrs.get("continuum_type", ""),
+            data_source=ds,
         )
-        # TODO: Currently as _prepapre_data is called in __init__, the data reqires reloading from datasource. We could optimize this by allowing to pass the dataset directly to the constructor or by adding a method to set the dataset after initialization.
+
         return absorber
 
     @property
@@ -165,7 +199,7 @@ class ContinuumAbsorber(SingleSpeciesModel, SavableModel):
 
     @property
     def class_name(self) -> str:
-        return f"{self.config.continuum_type}_continuum_{self.config.continuum_model.replace('.', '_')}"
+        return f"{self.config.continuum_type}_continuum_{self.config.model.replace('.', '_')}"
 
 
 class H2OContinuum(ContinuumAbsorber):
@@ -189,14 +223,16 @@ class H2OContinuum(ContinuumAbsorber):
             data_source=data_source,
         )
 
-        self._prepare_data()
+        self._prepare_raw_data()
 
-    def _prepare_data(self):
+    def _prepare_raw_data(self):
         """Prepare the continuum data on frequency grid"""
-        self._continuum_ds = xr.merge(
-            [self._self_continuum._continuum_ds, self._foreign_continuum._continuum_ds],
+        self._data = xr.merge(
+            [self._self_continuum._data, self._foreign_continuum._data],
             compat="no_conflicts",
         )
+        self._data.attrs["continuum_type"] = "both"
+        self._data.attrs["model_class"] = self.class_name
 
     def cross_section(
         self,
@@ -217,21 +253,38 @@ class SelfContinuumAbsorber(ContinuumAbsorber):
         frequency_grid: T_1D_ARRAYLIKE,
         data_source: Optional[str] = None,
     ):
-        self.config = ContinuumConfig(
-            species=species,
-            frequency_grid=frequency_grid,
-            continuum_type="self",
-            data_source=data_source,
-        )
 
-        self._required_data = ["ref_press", "ref_temp", "self_absco_ref", "self_texp"]
-        self._prepare_data()
-        self.ref_pressure = (
-            float(self._continuum_ds["ref_press"].values) * 100
-        )  # Convert from mBar to Pa
-        self.ref_temperature = float(self._continuum_ds["ref_temp"].values)
-        self.self_texp = self._continuum_ds["self_texp"].values
-        self.self_absco_ref = self._continuum_ds["self_absco_ref"].values
+        self._required_data = [
+            "ref_pressure",
+            "ref_temperature",
+            "self_absco_ref",
+            "self_texp",
+        ]
+
+        if data_source is not None and isinstance(data_source, xr.Dataset):
+            self._data = data_source
+            self.config = ContinuumConfig(
+                species=species,
+                frequency_grid=frequency_grid,
+                continuum_type="self",
+                data_source=self._data.attrs.get("data_source", None),
+            )
+        else:
+            self.config = ContinuumConfig(
+                species=species,
+                frequency_grid=frequency_grid,
+                continuum_type="self",
+                data_source=data_source,
+            )
+
+            self._prepare_raw_data()
+
+        self._validate_data()
+
+        self.ref_pressure = float(self._data["ref_pressure"].values)
+        self.ref_temperature = float(self._data["ref_temperature"].values)
+        self.self_texp = self._data["self_texp"].values
+        self.self_absco_ref = self._data["self_absco_ref"].values
 
     def cross_section(
         self,
@@ -261,22 +314,33 @@ class ForeignContinuumAbsorber(ContinuumAbsorber):
         self,
         species: str,
         frequency_grid: T_1D_ARRAYLIKE,
-        data_source: Optional[str] = None,
+        data_source: Optional[str | xr.Dataset] = None,
     ):
-        self.config = ContinuumConfig(
-            species=species,
-            frequency_grid=frequency_grid,
-            continuum_type="foreign",
-            data_source=data_source,
-        )
+        self._required_data = ["ref_pressure", "ref_temperature", "for_absco_ref"]
 
-        self._required_data = ["ref_press", "ref_temp", "for_absco_ref"]
-        self._prepare_data()
-        self.ref_pressure = (
-            float(self._continuum_ds["ref_press"].values) * 100
-        )  # Convert from mBar to Pa
-        self.ref_temperature = float(self._continuum_ds["ref_temp"].values)
-        self.foreign_absco_ref = self._continuum_ds["for_absco_ref"].values
+        if data_source is not None and isinstance(data_source, xr.Dataset):
+            self._data = data_source
+            self.config = ContinuumConfig(
+                species=species,
+                frequency_grid=frequency_grid,
+                continuum_type="foreign",
+                data_source=self._data.attrs.get("data_source", None),
+            )
+        else:
+            self.config = ContinuumConfig(
+                species=species,
+                frequency_grid=frequency_grid,
+                continuum_type="foreign",
+                data_source=data_source,
+            )
+
+            self._prepare_raw_data()
+
+        self._validate_data()
+
+        self.ref_pressure = float(self._data["ref_pressure"].values)
+        self.ref_temperature = float(self._data["ref_temperature"].values)
+        self.foreign_absco_ref = self._data["for_absco_ref"].values
 
     def cross_section(
         self,

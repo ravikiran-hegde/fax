@@ -73,7 +73,6 @@ class SavableModel(ABC):
     def __init__(self, config):
         self.config = config
 
-    @abstractmethod
     @classmethod
     def from_dataset(cls, ds: xr.Dataset) -> SavableModel:
         """Create an instance of the model from an xarray Dataset."""

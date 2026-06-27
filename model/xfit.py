@@ -23,28 +23,36 @@ from .abstract_class import (
 class CrossFitConfig(AbsorberConfig):
     """Configuration for the continuum absorber."""
 
-    halocarbon_model: str = "XFIT"
+    model: str = "XFIT"
     data_source: Optional[str] = "./../data/halocarbon/CFC11_XFIT.xml"
 
 
 class CrossFitAbsorber(SingleSpeciesModel, SavableModel):
     config: CrossFitConfig
-    _halocarbon_ds: xr.Dataset
+    _data: xr.Dataset
 
     def __init__(
         self,
         species: str,
         frequency_grid: T_1D_ARRAYLIKE,
-        data_source: Optional[str] = None,
+        data_source: Optional[str | xr.Dataset] = None,
     ):
-        self.config = CrossFitConfig(
-            species=species,
-            frequency_grid=frequency_grid,
-            data_source=data_source,
-        )
+        if data_source is not None and isinstance(data_source, xr.Dataset):
+            self._data = data_source
+            self.config = CrossFitConfig(
+                species=species,
+                frequency_grid=frequency_grid,
+                data_source=self._data.attrs.get("data_source", None),
+            )
 
-        self._required_data = ["ref_pres", "ref_temp"]
-        self._prepare_data()
+        else:
+            self.config = CrossFitConfig(
+                species=species,
+                frequency_grid=frequency_grid,
+                data_source=data_source,
+            )
+
+            self._prepare_raw_data()
 
     def cross_section(
         self,
@@ -52,10 +60,10 @@ class CrossFitAbsorber(SingleSpeciesModel, SavableModel):
         temperature: np.ndarray,
         vmr: np.ndarray,
     ) -> np.ndarray:
-        p00 = self._halocarbon_ds["p00"].values
-        p10 = self._halocarbon_ds["p10"].values
-        p01 = self._halocarbon_ds["p01"].values
-        p20 = self._halocarbon_ds["p20"].values
+        p00 = self._data["p00"].values
+        p10 = self._data["p10"].values
+        p01 = self._data["p01"].values
+        p20 = self._data["p20"].values
 
         xsec = (
             p00
@@ -212,50 +220,44 @@ class CrossFitAbsorber(SingleSpeciesModel, SavableModel):
             },
         )
 
-    def _prepare_data(self):
+    def _prepare_raw_data(self):
         """Prepare the continuum data on frequency grid"""
 
         if self.config.data_source is None:
             raise ValueError("Halocarbon absorber requires a data_source")
 
-        halocarbon_ds = self._xsec_xml_to_dataset(self.config.data_source)
+        data = self._xsec_xml_to_dataset(self.config.data_source)
+        data = data.drop_dims("band")
+        data = data.expand_dims("species")
+        data = data.drop_vars("band_id", errors="ignore")
+        data.attrs["model"] = self.config.model
+        data.attrs["data_source"] = self.config.data_source
+        data.attrs["model_class"] = self.class_name
 
         # Interpolate the coeffs to the frequency grid
-        self._halocarbon_ds = self._interpolate_ds_to_frequency_grid(halocarbon_ds)
+        self._data = self._interpolate_ds_to_frequency_grid(data)
 
     def to_dataset(self) -> xr.Dataset:
         """Convert a continuum dataset to be merge-compatible with the functional dataset."""
-
-        halo_ds = self._halocarbon_ds.copy()
-        halo_ds = halo_ds.drop_dims("band")
-        halo_ds = halo_ds.drop_vars("band_id", errors="ignore")
-        halo_ds.attrs["halocarbon_model"] = self.config.halocarbon_model
-        halo_ds.attrs["data_source"] = self.config.data_source
-        halo_ds.attrs["model_class"] = self.class_name
-
-        return halo_ds.expand_dims("species")
+        return self._data.copy()
 
     def save_data(self, path: str | Path) -> None:
         """Save the model to disk."""
-        self._halocarbon_ds.attrs.update(vars(self.config))
-        self._halocarbon_ds.to_netcdf(path)
+        self._data.attrs.update(vars(self.config))
+        self._data.to_netcdf(path)
 
     def load_data(self, path: str | Path) -> None:
         """Load the model from disk."""
-        self._halocarbon_ds = xr.open_dataset(path)
+        self._data = xr.open_dataset(path)
 
     @classmethod
     def from_dataset(cls, ds: xr.Dataset) -> "CrossFitAbsorber":
         """Create a CrossFitAbsorber from an xarray Dataset."""
-        config = CrossFitConfig(
+
+        absorber = cls(
             species=ds.coords["species"].values.item(),
             frequency_grid=ds.coords["frequency"].values,
-            data_source=ds.attrs.get("data_source", None),
-        )
-        absorber = cls(
-            species=config.species,
-            frequency_grid=config.frequency_grid,
-            data_source=config.data_source,
+            data_source=ds,
         )
         # TODO: Currently as _prepapre_data is called in __init__, the data reqires reloading from datasource. We could optimize this by allowing to pass the dataset directly to the constructor or by adding a method to set the dataset after initialization.
         return absorber
@@ -266,4 +268,4 @@ class CrossFitAbsorber(SingleSpeciesModel, SavableModel):
 
     @property
     def class_name(self) -> str:
-        return f"{self.config.halocarbon_model.replace('.', '_')}"
+        return f"{self.config.model.replace('.', '_')}"

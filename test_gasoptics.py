@@ -40,7 +40,7 @@ species = {
 
 absorbers = {}
 
-dt = xr.open_datatree("./data/ff/test_1_lw.nc")
+dt = xr.open_datatree("./data/ff/test_2_lw.nc")
 
 gas_optics = GasOptics.from_datatree(dt)
 absorbers = gas_optics._absorbers
