@@ -228,7 +228,7 @@ class SelfContinuumAbsorber(ContinuumAbsorber):
             self.self_absco_ref
             * partial_p_ratio
             * (temperature_ratio ** (self.self_texp + 1.0))
-            * rad_fun(self.config.frequency_grid, temperature)
+            * rad_fun(self.config.frequency_grid, temperature[:, None])
             * 1e-4  # Convert from cm^2 to m^2
         )
 
@@ -273,7 +273,7 @@ class ForeignContinuumAbsorber(ContinuumAbsorber):
             self.foreign_absco_ref
             * partial_p_ratio
             * temperature_ratio
-            * rad_fun(self.config.frequency_grid, temperature)
+            * rad_fun(self.config.frequency_grid, temperature[:, None])
             * 1e-4  # Convert from cm^2 to m^2
         )
 
