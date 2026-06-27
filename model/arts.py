@@ -138,3 +138,7 @@ class ARTSAbsorber(SingleSpeciesModel):
                 xsec_stack[i, :] += xsec
 
         return xsec_stack
+
+    @property
+    def class_name(self) -> str:
+        return "ARTS_SingleSpeciesRecipe"

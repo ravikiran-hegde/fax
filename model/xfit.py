@@ -244,6 +244,22 @@ class CrossFitAbsorber(SingleSpeciesModel, SavableModel):
         """Load the model from disk."""
         self._halocarbon_ds = xr.open_dataset(path)
 
+    @classmethod
+    def from_dataset(cls, ds: xr.Dataset) -> "CrossFitAbsorber":
+        """Create a CrossFitAbsorber from an xarray Dataset."""
+        config = CrossFitConfig(
+            species=ds.coords["species"].values.item(),
+            frequency_grid=ds.coords["frequency"].values,
+            data_source=ds.attrs.get("data_source", None),
+        )
+        absorber = cls(
+            species=config.species,
+            frequency_grid=config.frequency_grid,
+            data_source=config.data_source,
+        )
+        # TODO: Currently as _prepapre_data is called in __init__, the data reqires reloading from datasource. We could optimize this by allowing to pass the dataset directly to the constructor or by adding a method to set the dataset after initialization.
+        return absorber
+
     @property
     def file_name(self) -> str:
         return f"{self.config.species}_{self.class_name}.nc"

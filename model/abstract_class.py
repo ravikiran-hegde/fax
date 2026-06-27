@@ -39,18 +39,30 @@ class SingleSpeciesModel(ABC):
         """Return cross-section matrix with shape (levels, frequency)."""
         ...
 
-    def cross_section_from_atmds(self, atmds: xr.Dataset) -> xr.DataArray:
+    def cross_section_from_atmds(self, atmosphere_ds: xr.Dataset) -> xr.DataArray:
         xsec = xr.apply_ufunc(
             self.cross_section,
-            atmds["pressure"],
-            atmds["temperature"],
-            atmds["vmr"].sel(species=self.config.species),
+            atmosphere_ds["pressure"],
+            atmosphere_ds["temperature"],
+            atmosphere_ds["vmr"].sel(species=self.config.species),
             input_core_dims=[[], [], []],  # all are (levels,)
-            output_core_dims=[["frequency"]],  # output adds frequency dim
+            output_core_dims=[
+                [
+                    "frequency",
+                ]
+            ],  # output adds frequency dim
             dask="parallelized",  # works with dask arrays too
             output_dtypes=[float],
         )
-        return xsec.assign_coords(frequency=self.config.frequency_grid)
+        return xsec.assign_coords(frequency=self.config.frequency_grid).expand_dims(
+            species=[str(self.config.species)], axis=0
+        )
+
+    @property
+    @abstractmethod
+    def class_name(self) -> str:
+        """Return the class name of the model."""
+        return self.__class__.__name__
 
 
 class SavableModel(ABC):
@@ -60,6 +72,17 @@ class SavableModel(ABC):
 
     def __init__(self, config):
         self.config = config
+
+    @abstractmethod
+    @classmethod
+    def from_dataset(cls, ds: xr.Dataset) -> SavableModel:
+        """Create an instance of the model from an xarray Dataset."""
+        ...
+
+    @abstractmethod
+    def to_dataset(self) -> xr.Dataset:
+        """Convert the model to an xarray Dataset."""
+        ...
 
     @abstractmethod
     def save_data(self, path: str | Path) -> None:

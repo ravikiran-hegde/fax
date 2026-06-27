@@ -139,6 +139,26 @@ class ContinuumAbsorber(SingleSpeciesModel, SavableModel):
         """Load the model from disk."""
         self._continuum_ds = xr.open_dataset(path)
 
+    @classmethod
+    def from_dataset(cls, ds: xr.Dataset) -> "ContinuumAbsorber":
+        """Create a ContinuumAbsorber from an xarray Dataset."""
+        config = ContinuumConfig(
+            species=ds.coords["species"].values.item(),
+            frequency_grid=ds.coords["frequency"].values,
+            continuum_type=ds.attrs.get("continuum_type"),
+            continuum_model=ds.attrs.get("continuum_model"),
+            data_source=ds.attrs.get("data_source"),
+        )
+
+        absorber = cls(
+            species=config.species,
+            frequency_grid=config.frequency_grid,
+            continuum_type=config.continuum_type,
+            data_source=config.data_source,
+        )
+        # TODO: Currently as _prepapre_data is called in __init__, the data reqires reloading from datasource. We could optimize this by allowing to pass the dataset directly to the constructor or by adding a method to set the dataset after initialization.
+        return absorber
+
     @property
     def file_name(self) -> str:
         return f"{self.config.species}_{self.class_name}.nc"
@@ -153,6 +173,7 @@ class H2OContinuum(ContinuumAbsorber):
         self,
         frequency_grid: T_1D_ARRAYLIKE,
         data_source: Optional[str] = None,
+        **_ignored,  # for uniform api for class methods.
     ):
         self._self_continuum = SelfContinuumAbsorber(
             species="H2O", frequency_grid=frequency_grid, data_source=data_source
