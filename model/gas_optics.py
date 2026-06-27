@@ -157,9 +157,11 @@ class GasOptics:
             raise ValueError(f"Unsupported model type: {model_type}")
         """
 
-    def build(self) -> None:
+    def build(self, **kwargs) -> None:
         """Build all species models and m"""
-        ...
+        for absorber in self._absorbers.values():
+            if isinstance(absorber, FunctionalAbsorber):
+                absorber.train(**kwargs)
 
     def cross_section_from_ds(
         self,
