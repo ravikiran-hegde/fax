@@ -39,13 +39,18 @@ class SingleSpeciesModel(ABC):
         """Return cross-section matrix with shape (levels, frequency)."""
         ...
 
-    def cross_section_from_atmds(self, atmosphere_ds: xr.Dataset) -> xr.DataArray:
+    def cross_section_from_atmds(
+        self,
+        atmosphere_ds: xr.Dataset,
+        pressure_var: str = "pressure_layer",
+        temperature_var: str = "temperature_layer",
+    ) -> xr.DataArray:
         xsec = xr.apply_ufunc(
             self.cross_section,
-            atmosphere_ds["pressure"],
-            atmosphere_ds["temperature"],
-            atmosphere_ds["vmr"].sel(species=self.config.species),
-            input_core_dims=[[], [], []],  # all are (levels,)
+            atmosphere_ds[pressure_var],
+            atmosphere_ds[temperature_var],
+            atmosphere_ds[self.config.species],
+            # input_core_dims=[[], [], []],  # all are (levels,)
             output_core_dims=[
                 [
                     "frequency",

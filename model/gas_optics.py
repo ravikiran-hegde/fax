@@ -167,11 +167,17 @@ class GasOptics:
     def cross_section_from_ds(
         self,
         atmosphere_ds: xr.Dataset,
+        pressure_var: str = "pressure_layer",
+        temperature_var: str = "temperature_layer",
     ) -> xr.DataArray:
         """Calculate cross-section for each species and frequency."""
         xsec_list = []
         for absorber in self._absorbers.values():
-            xsec = absorber.cross_section_from_atmds(atmosphere_ds)
+            xsec = absorber.cross_section_from_atmds(
+                atmosphere_ds,
+                pressure_var=pressure_var,
+                temperature_var=temperature_var,
+            )
             xsec_list.append(xsec)
 
         xsec_total = xr.concat(xsec_list, dim="species")
@@ -181,23 +187,25 @@ class GasOptics:
     def absorption_from_ds(
         self,
         atmosphere_ds: xr.Dataset,
+        pressure_var: str = "pressure_layer",
+        temperature_var: str = "temperature_layer",
     ) -> xr.DataArray:
         """Calculate absorption coefficients for each species and frequency."""
-
-        tau_list = []
+        n_total = atmosphere_ds[pressure_var] / (
+            BOLTZMANN * atmosphere_ds[temperature_var]
+        )
+        abs_list = []
         for absorber in self._absorbers.values():
-            xsec = absorber.cross_section_from_atmds(atmosphere_ds)
-            n_total = atmosphere_ds["pressure"] / (
-                BOLTZMANN * atmosphere_ds["temperature"]
+            xsec = absorber.cross_section_from_atmds(
+                atmosphere_ds,
+                pressure_var=pressure_var,
+                temperature_var=temperature_var,
             )
-            abs_coef = (
-                xsec
-                * atmosphere_ds["vmr"].sel(species=absorber.config.species)
-                * n_total
-            )
-            tau_list.append(abs_coef)
 
-        abs_coef_all = xr.concat(tau_list, dim="species").assign_coords(
+            abs_coef = xsec * atmosphere_ds[absorber.config.species] * n_total
+            abs_list.append(abs_coef)
+
+        abs_coef_all = xr.concat(abs_list, dim="species").assign_coords(
             species=list(self._absorbers.keys())
         )
 
@@ -210,16 +218,33 @@ class GasOptics:
     def optical_depth_from_ds(
         self,
         atmosphere_ds: xr.Dataset,
+        pressure_var: str = "pressure_layer",
+        temperature_var: str = "temperature_layer",
+        N_per_m2_var: str = "N_per_m2_dry",
     ) -> xr.DataArray:
         """Calculate optical depth for each species and frequency."""
-        # TODO: Add path length to the atmosphere dataset and use it here
-        abs_coef = self.absorption_from_ds(atmosphere_ds=atmosphere_ds)
-        path_length = xr.ones_like(
-            atmosphere_ds["pressure"]
-        )  # placeholder for path length,
-        tau = abs_coef * path_length
+
+        tau_list = []
+        for absorber in self._absorbers.values():
+            xsec = absorber.cross_section_from_atmds(
+                atmosphere_ds,
+                pressure_var=pressure_var,
+                temperature_var=temperature_var,
+            )
+
+            tau = (
+                xsec
+                * atmosphere_ds[N_per_m2_var]
+                * atmosphere_ds[absorber.config.species]
+            )
+            tau_list.append(tau)
+
+        tau_all = xr.concat(tau_list, dim="species").assign_coords(
+            species=list(self._absorbers.keys())
+        )
+
         return xr.DataArray(
-            tau,
+            tau_all,
             attrs={"units": "m/m", "fullname": "optical_depth"},
             name="tau",
         )
@@ -234,7 +259,7 @@ class GasOptics:
         transmission = np.exp(-tau)
         transmission.name = "transmission"
         transmission.attrs = {
-            "units": "",  # transmission is dimensionless
+            "units": "m/m",
             "long_name": "Transmissivity",
             "description": "exp(-tau), where tau is optical depth",
         }
