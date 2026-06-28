@@ -12,7 +12,7 @@ import pyarts3
 import xarray as xr
 
 from .abstract_class import (
-    T_1D_ARRAYLIKE,
+    ARRAYLIKE,
     AbsorberConfig,
     SavableModel,
     SingleSpeciesModel,
@@ -35,7 +35,7 @@ class CrossFitAbsorber(SingleSpeciesModel, SavableModel):
     def __init__(
         self,
         species: str,
-        frequency_grid: T_1D_ARRAYLIKE,
+        frequency_grid: ARRAYLIKE,
         data_source: Optional[str | xr.Dataset] = None,
     ):
         if data_source is not None and isinstance(data_source, xr.Dataset):

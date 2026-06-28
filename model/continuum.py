@@ -31,7 +31,7 @@ import numpy as np
 import xarray as xr
 
 from .abstract_class import (
-    T_1D_ARRAYLIKE,
+    ARRAYLIKE,
     AbsorberConfig,
     SavableModel,
     SingleSpeciesModel,
@@ -55,7 +55,7 @@ class ContinuumAbsorber(SingleSpeciesModel, SavableModel):
         self,
         species: str,
         continuum_type: str,
-        frequency_grid: T_1D_ARRAYLIKE,
+        frequency_grid: ARRAYLIKE,
         data_source: Optional[str | xr.Dataset] = None,
     ):
         self._required_data = ["ref_pres", "ref_temp"]
@@ -205,7 +205,7 @@ class ContinuumAbsorber(SingleSpeciesModel, SavableModel):
 class H2OContinuum(ContinuumAbsorber):
     def __init__(
         self,
-        frequency_grid: T_1D_ARRAYLIKE,
+        frequency_grid: ARRAYLIKE,
         data_source: Optional[str] = None,
         **_ignored,  # for uniform api for class methods.
     ):
@@ -250,7 +250,7 @@ class SelfContinuumAbsorber(ContinuumAbsorber):
     def __init__(
         self,
         species: str,
-        frequency_grid: T_1D_ARRAYLIKE,
+        frequency_grid: ARRAYLIKE,
         data_source: Optional[str] = None,
     ):
 
@@ -313,7 +313,7 @@ class ForeignContinuumAbsorber(ContinuumAbsorber):
     def __init__(
         self,
         species: str,
-        frequency_grid: T_1D_ARRAYLIKE,
+        frequency_grid: ARRAYLIKE,
         data_source: Optional[str | xr.Dataset] = None,
     ):
         self._required_data = ["ref_pressure", "ref_temperature", "for_absco_ref"]

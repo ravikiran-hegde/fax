@@ -5,20 +5,19 @@ import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, NewType, Optional
 
 import numpy as np
 import xarray as xr
 from numpy.typing import ArrayLike
 from xarray import DataArray
 
-T_1D_ARRAYLIKE = ArrayLike | DataArray
-
+ARRAYLIKE = NewType("ARRAYLIKE", ArrayLike | DataArray)
 
 @dataclass
 class AbsorberConfig:
     species: str = ""
-    frequency_grid: T_1D_ARRAYLIKE = (1012.2305,)
+    frequency_grid: ARRAYLIKE = (1012.2305,)
 
 
 class SingleSpeciesModel(ABC):

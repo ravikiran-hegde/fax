@@ -8,7 +8,7 @@ import numpy as np
 import xarray as xr
 
 from .abstract_class import (
-    T_1D_ARRAYLIKE,
+    ARRAYLIKE,
     AbsorberConfig,
     SavableModel,
     SingleSpeciesModel,
@@ -61,7 +61,7 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
     def __init__(
         self,
         species: str,
-        frequency_grid: T_1D_ARRAYLIKE,
+        frequency_grid: ARRAYLIKE,
         pressure_form_name: str = "Hinge",
         temperature_form_name: str = "Rational",
         ref_pressure: float = REF_PRESSURE,

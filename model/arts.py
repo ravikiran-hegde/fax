@@ -13,7 +13,7 @@ from typing import Optional, Sequence
 import numpy as np
 import pyarts3 as pyarts
 
-from model.abstract_class import T_1D_ARRAYLIKE, AbsorberConfig, SingleSpeciesModel
+from model.abstract_class import ARRAYLIKE, AbsorberConfig, SingleSpeciesModel
 
 from .constants import EPS, REF_VMR
 
@@ -49,7 +49,7 @@ class ARTSAbsorber(SingleSpeciesModel):
     def __init__(
         self,
         species: str,
-        frequency_grid: T_1D_ARRAYLIKE,
+        frequency_grid: ARRAYLIKE,
         arts_tag: Optional[tuple[str, ...]] = None,
     ):
         arts_tag = arts_tag if arts_tag is not None else (species,)
