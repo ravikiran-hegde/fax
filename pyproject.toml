@@ -1,0 +1,24 @@
+[project]
+name = "faxsec"
+version = "0.1.0"
+requires-python = ">=3.12"
+classifiers=[
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "matplotlib",
+    "numpy>=2.0",
+    "xarray",
+    "scipy",
+]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["model*"]
