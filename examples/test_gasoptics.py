@@ -8,6 +8,7 @@ import xarray as xr
 
 from model.gas_optics import GasOptics
 from model.utils import (
+    hz_to_kayser,
     kayser_to_hz,
     simple_vmr_profile,
 )
@@ -69,12 +70,9 @@ absorbers = gas_optics._absorbers
 #     xfit_abs = CrossFitAbsorber.from_dataset(ds=ds.to_dataset())
 #     absorbers[sp] = xfit_abs
 
-
-# %%
-
-gas_optics = GasOptics.from_absorbers(
-    absorbers=absorbers,
-)
+# gas_optics = GasOptics.from_absorbers(
+#     absorbers=absorbers,
+# )
 
 
 # %% Initialise an atmosphere dataset with pressure, temperature, and vmr for each species
@@ -84,35 +82,43 @@ temperature_levels = [250.0, 260.0, 270.0, 280.0, 290.0, 300.0]  # in K
 
 atmosphere_ds = xr.Dataset(
     {
-        "pressure": (("level"), pressure_levels),  # in Pa
-        "temperature": (("level"), temperature_levels),  # in K
-        "vmr": (
-            ("species", "level"),
-            [
-                simple_vmr_profile(
-                    species=sp,
-                    pressure=np.array(pressure_levels),
-                    temperature=np.array(temperature_levels),
-                )
-                for sp in unique_species
-            ],
-        ),  # volume mixing ratio for each species
+        "pressure_layer": (("level"), pressure_levels),  # in Pa
+        "temperature_layer": (("level"), temperature_levels),  # in K
     },
     coords={
         "level": np.arange(len(pressure_levels)),
-        "species": unique_species,
     },
 )
-
+for sp in unique_species:
+    vmr_profile = simple_vmr_profile(
+        species=sp,
+        pressure=np.array(pressure_levels),
+        temperature=np.array(temperature_levels),
+    )
+    atmosphere_ds[sp] = (("level"), vmr_profile)
 
 # %%
 
 results = xr.Dataset()
 
 results["abs_coef"] = gas_optics.absorption_from_ds(atmosphere_ds=atmosphere_ds)
-results["tau"] = gas_optics.optical_depth_from_ds(atmosphere_ds=atmosphere_ds)
-results["transmission"] = gas_optics.transmission_from_ds(atmosphere_ds=atmosphere_ds)
+results["xsec"] = gas_optics.cross_section_from_ds(atmosphere_ds=atmosphere_ds)
+
 
 # %%
+from matplotlib import pyplot as plt
 
+fig, ax = plt.subplots(figsize=(10, 6))
+
+for sp in results.species.values:
+    ax.scatter(
+        hz_to_kayser(results["frequency"].values),
+        results["xsec"].sel(species=sp, level=0).values,
+        label=f"{sp}",
+    )
+ax.set_xlabel("Frequency (cm^-1)")
+ax.set_ylabel("Cross Section (m^2)")
+ax.set_yscale("log")
+ax.legend()
+ax.set_ylim(1e-30, 1e-20)
 # %%
