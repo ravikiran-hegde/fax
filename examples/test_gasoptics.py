@@ -1,5 +1,8 @@
 # %%
+import sys
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np
 import xarray as xr
 
@@ -11,7 +14,7 @@ from model.utils import (
 
 # %% Initialise gas optics model with a frequency grid and species
 
-lw_ddq_loc = "./data/ddq/DDQ_LW.h5"
+lw_ddq_loc = "../data/ddq/DDQ_LW.h5"
 kayser_quadrature_lw = xr.load_dataset(lw_ddq_loc)
 
 kayser_quadrature = kayser_quadrature_lw
@@ -40,7 +43,7 @@ species = {
 
 absorbers = {}
 
-dt = xr.open_datatree("./data/ff/test_2_lw.nc")
+dt = xr.open_datatree("../data/ff/test_2_lw.nc")
 
 gas_optics = GasOptics.from_datatree(dt)
 absorbers = gas_optics._absorbers

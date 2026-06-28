@@ -281,8 +281,8 @@ class SelfContinuumAbsorber(ContinuumAbsorber):
 
         self._validate_data()
 
-        self.ref_pressure = float(self._data["ref_pressure"].values)
-        self.ref_temperature = float(self._data["ref_temperature"].values)
+        self.ref_pressure = float(self._data["ref_pressure"].values.squeeze())
+        self.ref_temperature = float(self._data["ref_temperature"].values.squeeze())
         self.self_texp = self._data["self_texp"].values
         self.self_absco_ref = self._data["self_absco_ref"].values
 
@@ -338,8 +338,8 @@ class ForeignContinuumAbsorber(ContinuumAbsorber):
 
         self._validate_data()
 
-        self.ref_pressure = float(self._data["ref_pressure"].values)
-        self.ref_temperature = float(self._data["ref_temperature"].values)
+        self.ref_pressure = float(self._data["ref_pressure"].values.squeeze())
+        self.ref_temperature = float(self._data["ref_temperature"].values.squeeze())
         self.foreign_absco_ref = self._data["for_absco_ref"].values
 
     def cross_section(

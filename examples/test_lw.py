@@ -1,12 +1,14 @@
 # %%
+import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np
 import xarray as xr
 
 from model.utils import ensure_reference_dataset, kayser_to_hz, reference_cache_path
 
-lw_ddq_loc = "./data/ddq/DDQ_LW.h5"
+lw_ddq_loc = "../data/ddq/DDQ_LW.h5"
 kayser_quadrature_lw = xr.load_dataset(lw_ddq_loc)
 
 kayser_quadrature = kayser_quadrature_lw
@@ -42,7 +44,7 @@ species = {
 
 absorbers = {}
 arts_absorbers = {}
-reference_cache_dir = Path("./data/reference_lw")
+reference_cache_dir = Path("../data/reference_lw")
 
 for sp in species.keys():
     ensure_reference_dataset(
@@ -86,7 +88,7 @@ from model.continuum import H2OContinuum
 
 h2o_cont = H2OContinuum(
     frequency_grid=frequency_grid,
-    data_source="./data/continuum/absco-ref_wv-mt-ckd400.nc",
+    data_source="../data/continuum/absco-ref_wv-mt-ckd400.nc",
 )
 absorbers["H2O_continuum"] = h2o_cont
 
@@ -104,7 +106,7 @@ from model.xfit import CrossFitAbsorber
 cfc11_absorber = CrossFitAbsorber(
     species="CFC11",
     frequency_grid=frequency_grid,
-    data_source="./data/halocarbon/CFC11-XFIT.xml",
+    data_source="../data/halocarbon/CFC11-XFIT.xml",
 )
 
 absorbers["CFC11"] = cfc11_absorber
@@ -116,7 +118,7 @@ absorbers["CFC11"] = cfc11_absorber
 cfc12_absorber = CrossFitAbsorber(
     species="CFC12",
     frequency_grid=frequency_grid,
-    data_source="./data/halocarbon/CFC12-XFIT.xml",
+    data_source="../data/halocarbon/CFC12-XFIT.xml",
 )
 
 absorbers["CFC12"] = cfc12_absorber
@@ -140,12 +142,12 @@ for ds in datasets:
 for key, ds in groups.items():
     datatree[key] = ds
 
-datatree.to_netcdf("./data/ff/test_2_lw.nc", mode="w")
+datatree.to_netcdf("../data/ff/test_2_lw.nc", mode="w")
 # %%
 # Test loading data into functional absorber
 # from model.single_absorber import FunctionalAbsorber
 
-# dt = xr.open_datatree("./data/ff/test_4.nc")
+# dt = xr.open_datatree("../data/ff/test_4.nc")
 
 # dt_hr = dt["Hinge_Rational"]
 # absorbers = {}
