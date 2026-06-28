@@ -5,14 +5,15 @@ import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, NewType, Optional
+from typing import Any, Optional
 
 import numpy as np
 import xarray as xr
 from numpy.typing import ArrayLike
 from xarray import DataArray
 
-ARRAYLIKE = NewType("ARRAYLIKE", ArrayLike | DataArray)
+ARRAYLIKE = ArrayLike | DataArray
+
 
 @dataclass
 class AbsorberConfig:
