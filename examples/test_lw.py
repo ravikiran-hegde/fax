@@ -22,6 +22,10 @@ frequency_grid = kayser_to_hz(kayser_grid)
 from model.arts import ARTSAbsorber
 from model.functional import FunctionalAbsorber
 
+SELF_SCALING = {
+    "H2O": 4.078,
+    "CO2": 0.282,
+}
 # %%
 species = {
     "H2O": None,
@@ -64,6 +68,7 @@ for sp in species.keys():
         pressure_form_name="Hinge",
         temperature_form_name="Rational",
         frequency_grid=frequency_grid,
+        self_scaling=SELF_SCALING.get(sp, 0.0),
     )
 
     func_abs.train(
@@ -82,6 +87,7 @@ for sp in species.keys():
         frequency_grid=frequency_grid,
         arts_tag=species[sp],
     )
+
 
 # %%
 from model.continuum import H2OContinuum
@@ -246,7 +252,7 @@ for i in range(len(p)):
 
     ax[0].set_ylabel("Cross-section (m²)")
     ax[0].set_yscale("log")
-    ax[0].set_ylim(1e-30, 1e-20)
+    ax[0].set_ylim(1e-30, None)
     # ax[0].legend(markerscale=1)
 
     ax[1].legend()

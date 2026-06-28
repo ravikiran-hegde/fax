@@ -22,6 +22,11 @@ frequency_grid = kayser_to_hz(kayser_grid)
 from model.arts import ARTSAbsorber
 from model.functional import FunctionalAbsorber
 
+
+SELF_SCALING = {
+    "H2O": 4.078,
+    "CO2": 0.282,
+}
 # %%
 species = {
     "H2O": None,
@@ -64,6 +69,7 @@ for sp in species.keys():
         pressure_form_name="Hinge",
         temperature_form_name="Rational",
         frequency_grid=frequency_grid,
+        self_scaling=SELF_SCALING.get(sp, 0.0),
     )
 
     func_abs.train(
