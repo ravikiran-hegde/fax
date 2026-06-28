@@ -106,8 +106,12 @@ atmosphere_ds = xr.Dataset(
 
 
 # %%
-tau_ds = gas_optics.optical_depth_from_ds(atmosphere_ds=atmosphere_ds)
 
+results = xr.Dataset()
+
+results["abs_coef"] = gas_optics.absorption_from_ds(atmosphere_ds=atmosphere_ds)
+results["tau"] = gas_optics.optical_depth_from_ds(atmosphere_ds=atmosphere_ds)
+results["transmission"] = gas_optics.transmission_from_ds(atmosphere_ds=atmosphere_ds)
 
 # %%
 

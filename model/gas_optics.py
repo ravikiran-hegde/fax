@@ -5,6 +5,7 @@ import numpy as np
 import xarray as xr
 
 from model.abstract_class import SavableModel, SingleSpeciesModel
+from model.constants import BOLTZMANN
 from model.continuum import H2OContinuum
 from model.functional import FunctionalAbsorber
 from model.xfit import CrossFitAbsorber
@@ -177,42 +178,68 @@ class GasOptics:
 
         return xsec_total.assign_coords(species=list(self._absorbers.keys()))
 
-    def optical_depth_from_ds(
+    def absorption_from_ds(
         self,
         atmosphere_ds: xr.Dataset,
-    ) -> xr.Dataset:
-        """Calculate optical depth for each species and frequency."""
+    ) -> xr.DataArray:
+        """Calculate absorption coefficients for each species and frequency."""
 
         tau_list = []
         for absorber in self._absorbers.values():
             xsec = absorber.cross_section_from_atmds(atmosphere_ds)
-            tau = (
+            n_total = atmosphere_ds["pressure"] / (
+                BOLTZMANN * atmosphere_ds["temperature"]
+            )
+            abs_coef = (
                 xsec
                 * atmosphere_ds["vmr"].sel(species=absorber.config.species)
-                * atmosphere_ds["pressure"]
+                * n_total
             )
-            tau_list.append(tau)
+            tau_list.append(abs_coef)
 
-        tau_total = xr.concat(tau_list, dim="species").assign_coords(
+        abs_coef_all = xr.concat(tau_list, dim="species").assign_coords(
             species=list(self._absorbers.keys())
         )
 
-        return xr.Dataset({"tau": tau_total})
+        return xr.DataArray(
+            abs_coef_all,
+            attrs={"units": "m-1", "fullname": "absorption_coefficient"},
+            name="abs_coef",
+        )
+
+    def optical_depth_from_ds(
+        self,
+        atmosphere_ds: xr.Dataset,
+    ) -> xr.DataArray:
+        """Calculate optical depth for each species and frequency."""
+        # TODO: Add path length to the atmosphere dataset and use it here
+        abs_coef = self.absorption_from_ds(atmosphere_ds=atmosphere_ds)
+        path_length = xr.ones_like(
+            atmosphere_ds["pressure"]
+        )  # placeholder for path length,
+        tau = abs_coef * path_length
+        return xr.DataArray(
+            tau,
+            attrs={"units": "m/m", "fullname": "optical_depth"},
+            name="tau",
+        )
 
     def transmission_from_ds(
         self,
         atmosphere_ds: xr.Dataset,
     ) -> xr.DataArray:
         """Calculate transmission for each species and frequency."""
-        tau_ds = self.optical_depth_from_ds(atmosphere_ds=atmosphere_ds)
-        return xr.apply_ufunc(
-            lambda tau: np.exp(-tau),
-            tau_ds["tau"],
-            input_core_dims=[["species", "level", "frequency"]],
-            output_core_dims=[["species", "level", "frequency"]],
-            dask="parallelized",
-            output_dtypes=[float],
-        )
+        tau = self.optical_depth_from_ds(atmosphere_ds=atmosphere_ds)
+
+        transmission = np.exp(-tau)
+        transmission.name = "transmission"
+        transmission.attrs = {
+            "units": "",  # transmission is dimensionless
+            "long_name": "Transmissivity",
+            "description": "exp(-tau), where tau is optical depth",
+        }
+
+        return transmission
 
     @property
     def absorbers(self) -> dict[str, SingleSpeciesModel]:
