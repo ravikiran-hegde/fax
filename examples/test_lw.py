@@ -24,7 +24,7 @@ from model.functional import FunctionalAbsorber
 
 SELF_SCALING = {
     "H2O": 4.078,
-    "CO2": 0.282,
+    # "CO2": 0.282,
 }
 # %%
 species = {

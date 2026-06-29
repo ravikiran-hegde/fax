@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np
 import xarray as xr
 from pyrte_rrtmgp.kernels.rte import lw_solver_2stream
-
+from pyrte_rrtmgp import rte
 from model.constants import BOLTZMANN, GRAVITY, LIGHT_SPEED, MEAN_MASS_AIR, PLANCK
 from model.gas_optics import GasOptics
 from model.utils import kayser_to_hz
@@ -82,10 +82,10 @@ def read_rfmip_profiles(
     rfmip = rfmip.drop_vars([v for v in rfmip.variables if v not in required_vars])
 
     variable_map = {
-    "pres_layer": "pressure_layer",
-    "temp_layer": "temperature_layer",
-    "pres_level": "pressure_level",
-    "temp_level": "temperature_level",
+        "pres_layer": "pressure_layer",
+        "temp_layer": "temperature_layer",
+        "pres_level": "pressure_level",
+        "temp_level": "temperature_level",
     }
 
     atm_ds = rfmip.rename(variable_map)
@@ -100,11 +100,11 @@ def read_rfmip_profiles(
     return atm_ds
 
 
-def radiance_nu(f_grid_hz, temperature):
-    """Return Planck radiance in W/m^2/Hz/sr."""
+def planck_nu(f_grid_hz, temperature):
+    """Return Planck Flux in W/m^2/Hz."""
 
     exponent = PLANCK * f_grid_hz / (BOLTZMANN * temperature)
-    return (2.0 * PLANCK * f_grid_hz**3 / LIGHT_SPEED**2) / np.expm1(exponent)
+    return (np.pi * PLANCK * f_grid_hz**3 / LIGHT_SPEED**2) / np.expm1(exponent)
 
 
 def lw_fluxes_from_problem_ds(problem_ds: xr.Dataset) -> xr.Dataset:
@@ -138,7 +138,7 @@ def lw_fluxes_from_problem_ds(problem_ds: xr.Dataset) -> xr.Dataset:
         problem_ds["g"] if "g" in problem_ds else xr.zeros_like(problem_ds["tau"])
     )
     do_rescaling: bool = "ssa" in problem_ds and "g" in problem_ds
-    
+
     (
         spectral_flux_up,
         spectral_flux_down,
@@ -191,13 +191,15 @@ def lw_fluxes_from_problem_ds(problem_ds: xr.Dataset) -> xr.Dataset:
     lw_ddq_loc = "../data/ddq/DDQ_LW.h5"
     kayser_quadrature = xr.load_dataset(lw_ddq_loc)
 
-    fluxes["weights_hz"] = ("gpt", kayser_to_hz(kayser_quadrature["W"].values))
+    fluxes["weights_hz"] = ("frequency", kayser_to_hz(kayser_quadrature["W"].values))
 
-    fluxes["lw_flux_up"] = (fluxes["flux_up"] * fluxes["weights_hz"]).sum(dim="gpt")
-    fluxes["lw_flux_down"] = (fluxes["flux_down"] * fluxes["weights_hz"]).sum(dim="gpt")
+    fluxes["lw_flux_up"] = (fluxes["flux_up"] * fluxes["weights_hz"]).sum(
+        dim="frequency"
+    )
+    fluxes["lw_flux_down"] = (fluxes["flux_down"] * fluxes["weights_hz"]).sum(
+        dim="frequency"
+    )
     fluxes["lw_net_flux"] = fluxes["lw_flux_down"] - fluxes["lw_flux_up"]
-
-
 
     return fluxes  # .transpose(*transpose_order)
 
@@ -207,36 +209,36 @@ gas_optics_dt = xr.open_datatree("../data/ff/test_2_lw.nc")
 gas_optics = GasOptics.from_datatree(gas_optics_dt)
 
 # %% Load RFMIP Profiles
-atm_ds = read_rfmip_profiles(site=None, expt=2)
+atm_ds = read_rfmip_profiles(site=None, expt=None)
 
-flat_ds = atm_ds.stack(levels=("site", "layer"))
+flat_ds = atm_ds.stack(levels=("expt", "site", "layer"))
 
-#%% Compute tau and other related fields for RTE
+# %% Compute tau and other related fields for RTE
 tau_da = gas_optics.optical_depth_from_ds(atmosphere_ds=flat_ds)
 tau_da = tau_da.unstack("levels")
 
 
-rte_input = (
-    tau_da.sum(dim="species").to_dataset(name="tau").rename_dims({"frequency": "gpt"})
-)
+rte_input = tau_da.sum(dim="species").to_dataset(
+    name="tau"
+)  # .rename_dims({"frequency": "gpt"})
 
 
 rte_input["layer_source"] = xr.apply_ufunc(
-    radiance_nu,
+    planck_nu,
     rte_input["frequency"],
     atm_ds["temperature_layer"],
     vectorize=True,
 )
 
 rte_input["level_source"] = xr.apply_ufunc(
-    radiance_nu,
+    planck_nu,
     rte_input["frequency"],
     atm_ds["temperature_level"],
     vectorize=True,
 )
 
 rte_input["surface_source"] = xr.apply_ufunc(
-    radiance_nu,
+    planck_nu,
     rte_input["frequency"],
     atm_ds["surface_temperature"],
     vectorize=True,
@@ -245,14 +247,88 @@ rte_input["surface_emissivity"] = atm_ds["surface_emissivity"]
 rte_input["surface_source_jacobian"] = xr.zeros_like(rte_input["surface_source"])
 rte_input.attrs["top_at_1"] = True
 
-# %%
+rte_input = rte_input.expand_dims({"gpt": 1}, axis=-1)
 
-fluxes = lw_fluxes_from_problem_ds(rte_input)
+# %%
+fluxes = rte_input.rte.solve(add_to_input=False)
+
+lw_ddq_loc = "../data/ddq/DDQ_LW.h5"
+kayser_quadrature = xr.load_dataset(lw_ddq_loc)
+
+fluxes["weights_hz"] = ("frequency", kayser_to_hz(kayser_quadrature["W"].values))
+
+fluxes["brd_flux_up"] = (fluxes["lw_flux_up"] * fluxes["weights_hz"]).sum(
+    dim="frequency"
+)
+fluxes["brd_flux_down"] = (fluxes["lw_flux_down"] * fluxes["weights_hz"]).sum(
+    dim="frequency"
+)
+fluxes["brd_net_flux"] = fluxes["brd_flux_down"] - fluxes["brd_flux_up"]
 
 fluxes["global_mean_toa_flux"] = (
-        fluxes["lw_net_flux"].isel(level=0) * atm_ds["profile_weight"]
-    ).sum(dim="site")
-# %%
-fluxes
+    fluxes["brd_net_flux"].isel(level=0) * atm_ds["profile_weight"]
+).sum(dim="site")
 
+fluxes.sel(level=0)
+
+
+# %% RRTMGP Example
+
+from pyrte_rrtmgp.examples import RFMIP_FILES, load_example_file
+from pyrte_rrtmgp.rrtmgp import GasOptics
+from pyrte_rrtmgp.rrtmgp.data_files import (
+    GasOpticsFiles,
+)
+
+gas_optics_lw = GasOptics(gas_optics_file=GasOpticsFiles.LW_G256)
+gas_optics_sw = GasOptics(gas_optics_file=GasOpticsFiles.SW_G224)
+atmosphere = load_example_file(RFMIP_FILES.ATMOSPHERE)
+atmosphere["pres_level"] = xr.ufuncs.maximum(
+    gas_optics_sw.press_min,
+    atmosphere["pres_level"],
+)
+gas_names = {
+    "water_vapor": "h2o",
+    "carbon_dioxide_GM": "co2",
+    "ozone": "o3",
+    "nitrous_oxide_GM": "n2o",
+    "carbon_monoxide_GM": "co",
+    "methane_GM": "ch4",
+    "oxygen_GM": "o2",
+    "nitrogen_GM": "n2",
+    # "carbon_tetrachloride_GM": "ccl4",
+    "cfc11_GM": "cfc11",
+    "cfc12_GM": "cfc12",
+    # "hcfc22_GM": "cfc22",
+    # "hfc143a_GM": "hfc143a",
+    # "hfc125_GM": "hfc125",
+    # "hfc23_GM": "hfc23",
+    # "hfc32_GM": "hfc32",
+    # "hfc134a_GM": "hfc134a",
+    # "cf4_GM": "cf4",
+}
+
+atmosphere = atmosphere.rename_vars(gas_names)
+for g in gas_names.values():
+    if hasattr(atmosphere[g], "units"):
+        atmosphere[g] *= float(atmosphere[g].units)
+        atmosphere[g].assign_attrs({"units": "1"})
+
+optical_props = gas_optics_lw.compute(
+    atmosphere,
+    add_to_input=False,
+)
+optical_props["surface_emissivity"] = atmosphere.surface_emissivity
+
+
+lw_fluxes = optical_props.rte.solve(
+    add_to_input=False,
+)
+lw_fluxes["brd_net_flux"] = lw_fluxes["lw_flux_down"] - lw_fluxes["lw_flux_up"]
+
+lw_fluxes["global_mean_toa_flux"] = (
+    lw_fluxes["brd_net_flux"].isel(level=0) * atm_ds["profile_weight"]
+).sum(dim="site")
+
+lw_fluxes.sel(level=0)
 # %%
