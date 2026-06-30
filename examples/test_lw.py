@@ -8,16 +8,59 @@ import xarray as xr
 
 from model.utils import ensure_reference_dataset, kayser_to_hz, reference_cache_path
 
-lw_ddq_loc = "../data/ddq/DDQ_LW.h5"
-kayser_quadrature_lw = xr.load_dataset(lw_ddq_loc)
+# lw_ddq_loc = "../data/ddq/DDQ_LW.h5"
+# kayser_quadrature_lw = xr.load_dataset(lw_ddq_loc)
 
-kayser_quadrature = kayser_quadrature_lw
+# kayser_quadrature = kayser_quadrature_lw
 
-kayser_grid = kayser_quadrature["S"].values
-kayser_weights = kayser_quadrature["W"].values
+# kayser_grid = kayser_quadrature["S"].values
+# kayser_weights = kayser_quadrature["W"].values
+# frequency_grid = kayser_to_hz(kayser_grid)
 
 
-frequency_grid = kayser_to_hz(kayser_grid)
+def load_optimized_flux_quadrature(
+    quadrature_dir: (
+        str | Path | None
+    ) = "/Users/rk/.cache/arts/arts-xml-data-3.0.0dev8/planets/Earth/Optimized-Flux-Frequencies",
+    band: str | None = "LW",
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Load optimized flux frequencies and weights from ARTS XML files.
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+        (f_grid_hz, kayser_grid, weights_hz, weights_kayser)
+    """
+
+    import pyarts3
+
+    from model.utils import hz_to_kayser
+
+    base = Path(quadrature_dir)
+    prefix = str(band).upper()
+    f_path = base / f"{prefix}-flux-optimized-f_grid.xml"
+    w_path = base / f"{prefix}-flux-optimized-quadrature_weights.xml"
+    # Keep explicit Python references and copy data into NumPy-owned memory.
+    # ARTS vectors can otherwise be views to temporary buffers.
+    f_vec = pyarts3.xml.load(str(f_path))
+    w_vec = pyarts3.xml.load(str(w_path))
+    f_grid_hz = np.array(f_vec, dtype=float, copy=True)
+    weights_hz = np.array(w_vec, dtype=float, copy=True)
+
+    if f_grid_hz.ndim != 1 or weights_hz.ndim != 1:
+        raise ValueError("Optimized quadrature f_grid and weights must be 1D vectors")
+    if f_grid_hz.shape != weights_hz.shape:
+        raise ValueError("Optimized quadrature frequencies and weights must match")
+
+    kayser_grid = hz_to_kayser(f_grid_hz)
+    weights_kayser = hz_to_kayser(weights_hz)
+    return f_grid_hz, kayser_grid, weights_hz, weights_kayser
+
+
+frequency_grid, kayser_grid, weights_hz, kayser_weights = (
+    load_optimized_flux_quadrature(band="LW")
+)
+
 
 from model.arts import ARTSAbsorber
 from model.functional import FunctionalAbsorber
@@ -29,17 +72,17 @@ SELF_SCALING = {
 # %%
 species = {
     "H2O": None,
-    "CO2": ("CO2", "CO2-CKDMT252"),  # ,
+    "CO2": None,  # ("CO2", "CO2-CKDMT252"),
     "O3": None,
     "O2": (
         "O2",
-        "O2-CIA-O2",
+        # "O2-CIA-O2",
     ),
     "CH4": None,
     "N2O": None,
     "N2": (
         "N2",
-        "N2-CIA-N2",
+        # "N2-CIA-N2",
     ),  # "N2-CIA-CH4" not available in pyarts3
     # "CFC11": ("CFC11-XFIT",),
     # "CFC12": ("CFC12-XFIT",)
@@ -48,7 +91,7 @@ species = {
 
 absorbers = {}
 arts_absorbers = {}
-reference_cache_dir = Path("../data/reference_lw")
+reference_cache_dir = Path("../data/reference_lw_2")
 
 for sp in species.keys():
     ensure_reference_dataset(
@@ -135,6 +178,14 @@ absorbers["CFC12"] = cfc12_absorber
 # )
 # %%
 
+
+ddq = xr.Dataset(
+    {
+        "weights_hz": ("frequency", kayser_to_hz(kayser_weights)),
+    }
+)
+ddq.attrs["model_class"] = "DDQ"
+
 datatree = xr.DataTree()
 datasets = [absorber.to_dataset() for absorber in absorbers.values()]
 groups = {}
@@ -148,7 +199,10 @@ for ds in datasets:
 for key, ds in groups.items():
     datatree[key] = ds
 
-datatree.to_netcdf("../data/ff/test_2_lw.nc", mode="w")
+datatree["DDQ"] = ddq
+
+datatree.to_netcdf("../data/ff/test_3_lw.nc", mode="w")
+
 # %%
 # Test loading data into functional absorber
 # from model.single_absorber import FunctionalAbsorber
@@ -167,11 +221,11 @@ datatree.to_netcdf("../data/ff/test_2_lw.nc", mode="w")
 
 import matplotlib.pyplot as plt
 
-# p = np.array([5e4, 1000e2, 1e2])
-# t = np.array([250, 273, 300])
+p = np.array([5e4, 1000e2, 1e2])
+t = np.array([150, 273, 300])
 
-p = [500e2]
-t = [250]
+# p = [500e2]
+# t = [250]
 
 
 def simple_vmr_profile(
@@ -252,12 +306,13 @@ for i in range(len(p)):
 
     ax[0].set_ylabel("Cross-section (m²)")
     ax[0].set_yscale("log")
-    ax[0].set_ylim(1e-30, None)
+    ax[0].set_ylim(1e-40, None)
     # ax[0].legend(markerscale=1)
 
     ax[1].legend()
     ax[1].set_xlabel("Frequency (cm⁻¹)")
     ax[1].set_ylabel("Log10 ratio (model / ARTS)")
+    ax[1].set_ylim(-10, 10)
 
     # ax[1].set_yscale("log", base=10)
     plt.suptitle(f"Pressure: {p[i]:.2e} Pa, Temperature: {t[i]:.1f} K")
