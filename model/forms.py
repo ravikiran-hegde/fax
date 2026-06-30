@@ -211,7 +211,7 @@ class SmoothHingeForm(HingeForm):
 class RationalForm(FunctionalForm):
     """Rational function: (a0 + a1*x + ... + an*x^n) / (1 + b1*x + ... + bm*x^m)."""
 
-    def __init__(self, numerator_order: int = 2, denominator_order: int = 1):
+    def __init__(self, numerator_order: int = 2, denominator_order: int = 2):
         self.numerator_order = numerator_order
         self.denominator_order = denominator_order
 
@@ -260,7 +260,7 @@ class RationalForm(FunctionalForm):
         num = Vn @ coeffs[: self._n_a]  # (N, F)
         den = Vd @ coeffs[self._n_a :] + 1.0  # (N, F)
 
-        den = np.where(np.abs(den) < 1e-12, np.copysign(1e-12, den), den)
+        # den = np.where(np.abs(den) < 1e-12, np.copysign(1e-12, den), den)
 
         return num / den  # (N, F)
 

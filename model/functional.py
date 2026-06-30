@@ -120,7 +120,8 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
         p_scale = self.pressure_form.evaluate(x_p, self.coeffs.pressure_coeffs)
         t_scale = self.temperature_form.evaluate(x_t, self.coeffs.temperature_coeffs)
 
-        return self.coeffs.xsec0 * np.exp(p_scale + t_scale)
+        xsec = self.coeffs.xsec0 * np.exp(p_scale + t_scale)
+        return np.clip(np.nan_to_num(xsec, nan=0, posinf=0, neginf=0), 0, 1e10)
 
     def train(
         self,
