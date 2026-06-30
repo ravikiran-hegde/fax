@@ -22,26 +22,27 @@ frequency_grid = kayser_to_hz(kayser_grid)
 from model.arts import ARTSAbsorber
 from model.functional import FunctionalAbsorber
 
-
 SELF_SCALING = {
     "H2O": 4.078,
-    "CO2": 0.282,
+    # "CO2": 0.282,
 }
 # %%
 species = {
     "H2O": None,
-    "CO2": ("CO2", "CO2-CKDMT252"),  # ,
+    "CO2": ("CO2", 
+            # "CO2-CKDMT252"
+            ),  # ,
     "O3": None,
     "O2": (
         "O2",  # "O2-*-1e12-1e99" produces parsing error
-        "O2-CIAfunCKDMT100",
+        # "O2-CIAfunCKDMT100",
     ),
     "CH4": None,
     "N2O": None,
     "N2": (
         "N2",
-        "N2-CIAfunCKDMT252",
-        "N2-CIArotCKDMT252",
+        # "N2-CIAfunCKDMT252",
+        # "N2-CIArotCKDMT252",
     ),
 }
 
@@ -150,22 +151,23 @@ absorbers["O3-XFIT"] = CrossFitAbsorber(
 # %% Solar spectra
 import pyarts3
 
-source = pyarts3.xml.load(
+solar_source = pyarts3.xml.load(
     "../data/solar_spectra/solar_spectrum_July_2008.xml"
 ).to_xarray()
-source = source.rename({"Frequencys": "frequency"})
-source_ds = xr.Dataset(
-    {"spectra": (("frequency",), source.values[:, 0])},
-    coords={"frequency": source.frequency},
+solar_source = solar_source.rename({"Frequencys": "frequency"})
+solar_source = xr.Dataset(
+    {"spectral_solar_radiance": (("frequency",), solar_source.values[:, 0])},
+    coords={"frequency": solar_source.frequency},
 )
 
-solar_spectra = source_ds.interp(frequency=frequency_grid, method="cubic")
-solar_spectra.attrs["description"] = (
+ddq = solar_source.interp(frequency=frequency_grid, method="cubic")
+ddq.attrs["description"] = (
     "Solar spectrum from July 2008, interpolated to model frequency grid"
 )
-solar_spectra.attrs["source"] = "../data/solar_spectra/solar_spectrum_July_2008.xml"
-solar_spectra.attrs["model_class"] = "Solar Spectra"
+ddq.attrs["source"] = "../data/solar_spectra/solar_spectrum_July_2008.xml"
+ddq.attrs["model_class"] = "DDQ"
 
+ddq["weights_hz"] = ("frequency", kayser_to_hz(kayser_weights))
 # %% Save to nc
 
 datatree = xr.DataTree()
@@ -181,9 +183,9 @@ for ds in datasets:
 for key, ds in groups.items():
     datatree[key] = ds
 
-datatree["Solar_Spectra"] = solar_spectra
+datatree["DDQ"] = ddq
 
-datatree.to_netcdf("../data/ff/test_2_sw.nc", mode="w")
+datatree.to_netcdf("../data/ff/test_3_sw.nc", mode="w")
 # %%
 # Test loading data into functional absorber
 # from model.single_absorber import FunctionalAbsorber
@@ -287,7 +289,7 @@ for i in range(len(p)):
 
     ax[0].set_ylabel("Cross-section (m²)")
     ax[0].set_yscale("log")
-    ax[0].set_ylim(1e-30, 1e-20)
+    ax[0].set_ylim(1e-40, 1e-20)
     # ax[0].legend(markerscale=1)
 
     ax[1].legend()
