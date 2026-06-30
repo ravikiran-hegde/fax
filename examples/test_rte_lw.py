@@ -116,18 +116,12 @@ def planck_nu(f_grid_hz, temperature):
 
 
 # %% Load RFMIP Profiles
-atm_ds = read_rfmip_profiles(site=None, expt=[1])
-
+atm_ds = read_rfmip_profiles(site=None, expt=None)
 flat_ds = atm_ds.stack(atm_points=("expt", "site", "layer"))
 
 
 # %% Instantiate a GasOptics
 gas_optics_dt = xr.open_datatree("../data/ff/test_3_lw.nc")
-# old_training = xr.load_datatree(
-#     "/Users/rk/Work/fastabs/data/hinge_rational_2_2_noint_dT_quadrature_lw_64_1000_v3.nc"
-# )
-# gas_optics_dt["Hinge_Rational"] = old_training
-# gas_optics_dt.drop_nodes(["XFIT", "both_continuum_MT_CKD_4_3"])
 gas_optics = GasOptics.from_datatree(gas_optics_dt)
 
 
@@ -136,9 +130,7 @@ tau_da = gas_optics.optical_depth_from_ds(atmosphere_ds=flat_ds)
 tau_da = tau_da.unstack("atm_points")
 
 
-rte_input = tau_da.sum(dim="species").to_dataset(
-    name="tau"
-)  # .rename_dims({"frequency": "gpt"})
+rte_input = tau_da.sum(dim="species").to_dataset(name="tau")
 
 
 rte_input["layer_source"] = xr.apply_ufunc(
@@ -172,10 +164,6 @@ rte_input = rte_input.expand_dims({"gpt": 1}, axis=-1)
 rte
 fluxes = rte_input.rte.solve(add_to_input=False)
 
-# lw_ddq_loc = "../data/ddq/DDQ_LW.h5"
-# kayser_quadrature = xr.load_dataset(lw_ddq_loc)
-# kayser_weights = kayser_quadrature["W"].values
-
 fluxes["weights_hz"] = ("frequency", gas_optics_dt["DDQ"]["weights_hz"].values)
 
 fluxes["brd_flux_up"] = (fluxes["lw_flux_up"] * fluxes["weights_hz"]).sum(
@@ -203,9 +191,7 @@ from pyrte_rrtmgp.rrtmgp.data_files import (
 gas_optics_lw = GasOptics(gas_optics_file=GasOpticsFiles.LW_G256)
 atmosphere = xr.load_dataset(
     "/Users/rk/Work/rfmip/multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc"
-).isel(
-    expt=1
-)  # load_example_file(RFMIP_FILES.ATMOSPHERE)
+)
 atmosphere["pres_level"] = xr.ufuncs.maximum(
     gas_optics_lw.press_min,
     atmosphere["pres_level"],
@@ -255,12 +241,12 @@ rrtmg_fluxes["global_mean_toa_flux"] = (
 
 rrtmg_fluxes.sel(level=0)
 # %%
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
-plt.scatter(
-    rrtmg_fluxes.site.values,
-    (rrtmg_fluxes.brd_net_flux / fluxes.brd_net_flux).sel(level=0).values,
-)
+# plt.scatter(
+#     rrtmg_fluxes.site.values,
+#     (rrtmg_fluxes.brd_net_flux / fluxes.brd_net_flux).sel(level=0).values,
+# )
 print(
     (
         (rrtmg_fluxes.brd_net_flux - fluxes.brd_net_flux).sel(level=0)

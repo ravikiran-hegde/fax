@@ -8,58 +8,58 @@ import xarray as xr
 
 from model.utils import ensure_reference_dataset, kayser_to_hz, reference_cache_path
 
-# lw_ddq_loc = "../data/ddq/DDQ_LW.h5"
-# kayser_quadrature_lw = xr.load_dataset(lw_ddq_loc)
+lw_ddq_loc = "../data/ddq/DDQ_LW.h5"
+kayser_quadrature_lw = xr.load_dataset(lw_ddq_loc)
 
-# kayser_quadrature = kayser_quadrature_lw
+kayser_quadrature = kayser_quadrature_lw
 
-# kayser_grid = kayser_quadrature["S"].values
-# kayser_weights = kayser_quadrature["W"].values
-# frequency_grid = kayser_to_hz(kayser_grid)
-
-
-def load_optimized_flux_quadrature(
-    quadrature_dir: (
-        str | Path | None
-    ) = "/Users/rk/.cache/arts/arts-xml-data-3.0.0dev8/planets/Earth/Optimized-Flux-Frequencies",
-    band: str | None = "LW",
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Load optimized flux frequencies and weights from ARTS XML files.
-
-    Returns
-    -------
-    tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
-        (f_grid_hz, kayser_grid, weights_hz, weights_kayser)
-    """
-
-    import pyarts3
-
-    from model.utils import hz_to_kayser
-
-    base = Path(quadrature_dir)
-    prefix = str(band).upper()
-    f_path = base / f"{prefix}-flux-optimized-f_grid.xml"
-    w_path = base / f"{prefix}-flux-optimized-quadrature_weights.xml"
-    # Keep explicit Python references and copy data into NumPy-owned memory.
-    # ARTS vectors can otherwise be views to temporary buffers.
-    f_vec = pyarts3.xml.load(str(f_path))
-    w_vec = pyarts3.xml.load(str(w_path))
-    f_grid_hz = np.array(f_vec, dtype=float, copy=True)
-    weights_hz = np.array(w_vec, dtype=float, copy=True)
-
-    if f_grid_hz.ndim != 1 or weights_hz.ndim != 1:
-        raise ValueError("Optimized quadrature f_grid and weights must be 1D vectors")
-    if f_grid_hz.shape != weights_hz.shape:
-        raise ValueError("Optimized quadrature frequencies and weights must match")
-
-    kayser_grid = hz_to_kayser(f_grid_hz)
-    weights_kayser = hz_to_kayser(weights_hz)
-    return f_grid_hz, kayser_grid, weights_hz, weights_kayser
+kayser_grid = kayser_quadrature["S"].values
+kayser_weights = kayser_quadrature["W"].values
+frequency_grid = kayser_to_hz(kayser_grid)
 
 
-frequency_grid, kayser_grid, weights_hz, kayser_weights = (
-    load_optimized_flux_quadrature(band="LW")
-)
+# def load_optimized_flux_quadrature(
+#     quadrature_dir: (
+#         str | Path | None
+#     ) = "/Users/rk/.cache/arts/arts-xml-data-3.0.0dev8/planets/Earth/Optimized-Flux-Frequencies",
+#     band: str | None = "LW",
+# ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+#     """Load optimized flux frequencies and weights from ARTS XML files.
+
+#     Returns
+#     -------
+#     tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+#         (f_grid_hz, kayser_grid, weights_hz, weights_kayser)
+#     """
+
+#     import pyarts3
+
+#     from model.utils import hz_to_kayser
+
+#     base = Path(quadrature_dir)
+#     prefix = str(band).upper()
+#     f_path = base / f"{prefix}-flux-optimized-f_grid.xml"
+#     w_path = base / f"{prefix}-flux-optimized-quadrature_weights.xml"
+#     # Keep explicit Python references and copy data into NumPy-owned memory.
+#     # ARTS vectors can otherwise be views to temporary buffers.
+#     f_vec = pyarts3.xml.load(str(f_path))
+#     w_vec = pyarts3.xml.load(str(w_path))
+#     f_grid_hz = np.array(f_vec, dtype=float, copy=True)
+#     weights_hz = np.array(w_vec, dtype=float, copy=True)
+
+#     if f_grid_hz.ndim != 1 or weights_hz.ndim != 1:
+#         raise ValueError("Optimized quadrature f_grid and weights must be 1D vectors")
+#     if f_grid_hz.shape != weights_hz.shape:
+#         raise ValueError("Optimized quadrature frequencies and weights must match")
+
+#     kayser_grid = hz_to_kayser(f_grid_hz)
+#     weights_kayser = hz_to_kayser(weights_hz)
+#     return f_grid_hz, kayser_grid, weights_hz, weights_kayser
+
+
+# frequency_grid, kayser_grid, weights_hz, kayser_weights = (
+#     load_optimized_flux_quadrature(band="LW")
+# )
 
 
 from model.arts import ARTSAbsorber
@@ -72,7 +72,9 @@ SELF_SCALING = {
 # %%
 species = {
     "H2O": None,
-    "CO2": None,  # ("CO2", "CO2-CKDMT252"),
+    "CO2": ("CO2", 
+            # "CO2-CKDMT252"
+            ),
     "O3": None,
     "O2": (
         "O2",
@@ -91,7 +93,7 @@ species = {
 
 absorbers = {}
 arts_absorbers = {}
-reference_cache_dir = Path("../data/reference_lw_2")
+reference_cache_dir = Path("../data/reference_lw")
 
 for sp in species.keys():
     ensure_reference_dataset(
@@ -135,11 +137,10 @@ for sp in species.keys():
 # %%
 from model.continuum import H2OContinuum
 
-h2o_cont = H2OContinuum(
+absorbers["H2O_continuum"] = H2OContinuum(
     frequency_grid=frequency_grid,
     data_source="../data/continuum/absco-ref_wv-mt-ckd400.nc",
 )
-absorbers["H2O_continuum"] = h2o_cont
 
 arts_absorbers["H2O_continuum"] = ARTSAbsorber(
     species="H2O",
@@ -152,30 +153,18 @@ arts_absorbers["H2O_continuum"] = ARTSAbsorber(
 # %%
 from model.xfit import CrossFitAbsorber
 
-cfc11_absorber = CrossFitAbsorber(
+absorbers["CFC11"] = CrossFitAbsorber(
     species="CFC11",
     frequency_grid=frequency_grid,
     data_source="../data/halocarbon/CFC11-XFIT.xml",
 )
 
-absorbers["CFC11"] = cfc11_absorber
-# arts_absorbers["CFC11"] = ARTSAbsorber(
-#     species="CFC11",
-#     frequency_grid=frequency_grid,
-#     arts_tag=("CFC11-XFIT",),
-# )
-cfc12_absorber = CrossFitAbsorber(
+absorbers["CFC12"] = CrossFitAbsorber(
     species="CFC12",
     frequency_grid=frequency_grid,
     data_source="../data/halocarbon/CFC12-XFIT.xml",
 )
 
-absorbers["CFC12"] = cfc12_absorber
-# arts_absorbers["CFC12"] = ARTSAbsorber(
-#     species="CFC12",
-#     frequency_grid=frequency_grid,
-#     arts_tag=("CFC12-XFIT",),
-# )
 # %%
 
 
