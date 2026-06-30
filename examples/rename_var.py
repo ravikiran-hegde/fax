@@ -1,0 +1,237 @@
+# %%
+import sys
+from pathlib import Path
+
+import xarray as xr
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from model.utils import hz_to_kayser
+
+
+def clear_all_attrs(ds):
+    ds = ds.copy()
+    ds.attrs.clear()
+    for var in ds.variables:
+        ds[var].attrs.clear()
+    return ds
+
+
+# -----------------------------------------------------------------------------
+# %% Order and renames
+# -----------------------------------------------------------------------------
+
+TERM_NAMES = ["p00", "p10", "p20", "p01"]
+
+LINE_RENAME = {
+    "xsec0": "fax_sigma0",
+    "p_order": "fax_p_nterms",
+    "ref_pressure": "fax_p0",
+    "ref_temperature": "fax_T0",
+    "ref_vmr": "fax_vmr0",
+    "self_scaling": "fax_S",
+    "pressure_coeffs": "fax_c",
+    "species": "fax_species_names",
+}
+
+CONT_RENAME = {
+    "ref_pressure": "mtckd_p0",
+    "ref_temperature": "mtckd_T0",
+    "species": "mtckd_species_names",
+    "self_absco_ref": "mtckd_cself",
+    "self_texp": "mtckd_n",
+    "for_absco_ref": "mtckd_cfrgn",
+}
+
+TRANSPOSE_ORDER = (
+    "fax_p_nterms",
+    "fax_t_order",
+    "fax_species_names",
+    "xsec_nterms",
+    "xsec_species_names",
+    "mtckd_species_names",
+    "nu",
+)
+
+LW_ORDER = [
+    "nu",
+    "weights",
+    "fax_species_names",
+    "fax_p0",
+    "fax_T0",
+    "fax_S",
+    "fax_sigma0",
+    "fax_p_nterms",
+    "fax_c",
+    "fax_t_order",
+    "fax_a",
+    "fax_b",
+    "xsec_species_names",
+    "xsec_nterms",
+    "xsec_p",
+    "mtckd_species_names",
+    "mtckd_p0",
+    "mtckd_T0",
+    "mtckd_cself",
+    "mtckd_n",
+    "mtckd_cfrgn",
+]
+
+SW_ORDER = [
+    "nu",
+    "weights",
+    "solar_spectral_radiance",
+    *LW_ORDER[2:],
+]
+
+
+# =============================================================================
+# %%Longwave
+# =============================================================================
+
+data_lw = xr.open_datatree("../data/ff/test_3_lw.nc").copy()
+
+# ---- Hinge rational ---------------------------------------------------------
+
+lines = data_lw["Hinge_Rational"].to_dataset().rename(LINE_RENAME)
+
+lines["fax_p_nterms"] = ("fax_p_nterms", range(lines.sizes["fax_p_nterms"]))
+
+lines["fax_a"] = (
+    lines["temperature_coeffs"]
+    .isel(t_order=[0, 1, 2])
+    .rename({"t_order": "fax_t_order"})
+    .assign_coords(fax_t_order=[0, 1, 2])
+)
+
+ones = xr.ones_like(lines["temperature_coeffs"].isel(t_order=0, drop=True))
+ones = ones.expand_dims(fax_t_order=[0])
+
+rest = (
+    lines["temperature_coeffs"]
+    .isel(t_order=[3, 4])
+    .rename({"t_order": "fax_t_order"})
+    .assign_coords(fax_t_order=[1, 2])
+)
+
+lines["fax_b"] = xr.concat([ones, rest], dim="fax_t_order")
+
+lines = lines.drop_vars(["temperature_coeffs", "t_order", "fax_vmr0"])
+
+# ---- MTCKD ------------------------------------------------------------------
+
+cont = data_lw["both_continuum_MT_CKD_4_3"].to_dataset().rename(CONT_RENAME)
+
+# ---- XFIT -------------------------------------------------------------------
+
+xsec = (
+    xr.concat(
+        [data_lw["XFIT"].to_dataset()[name] for name in TERM_NAMES],
+        dim="xsec_nterms",
+    )
+    .assign_coords(xsec_nterms=range(4))
+    .to_dataset()
+    .rename(
+        {
+            "species": "xsec_species_names",
+            "p00": "xsec_p",
+        }
+    )
+)
+
+# ---- Merge ------------------------------------------------------------------
+
+gas_optics_lw = xr.merge([lines, cont, xsec])
+
+gas_optics_lw["frequency"] = hz_to_kayser(gas_optics_lw["frequency"])
+gas_optics_lw = gas_optics_lw.rename({"frequency": "nu"})
+
+gas_optics_lw["weights"] = (
+    "nu",
+    hz_to_kayser(data_lw["DDQ"]["weights_hz"].values),
+)
+
+gas_optics_lw = clear_all_attrs(gas_optics_lw)
+gas_optics_lw = gas_optics_lw.transpose(*TRANSPOSE_ORDER)
+gas_optics_lw = gas_optics_lw[LW_ORDER]
+
+gas_optics_lw.to_netcdf("../data/ff/gas_optics_lw.nc")
+
+
+# =============================================================================
+# %% Shortwave
+# =============================================================================
+
+data_sw = xr.open_datatree("../data/ff/test_3_sw.nc").copy()
+
+# ---- Hinge rational ---------------------------------------------------------
+
+lines = data_sw["Hinge_Rational"].to_dataset().rename(LINE_RENAME)
+
+lines["fax_p_nterms"] = ("fax_p_nterms", range(lines.sizes["fax_p_nterms"]))
+
+lines["fax_a"] = (
+    lines["temperature_coeffs"]
+    .isel(t_order=[0, 1, 2])
+    .rename({"t_order": "fax_t_order"})
+    .assign_coords(fax_t_order=[0, 1, 2])
+)
+
+ones = xr.ones_like(lines["temperature_coeffs"].isel(t_order=0, drop=True))
+ones = ones.expand_dims(fax_t_order=[0])
+
+rest = (
+    lines["temperature_coeffs"]
+    .isel(t_order=[3, 4])
+    .rename({"t_order": "fax_t_order"})
+    .assign_coords(fax_t_order=[1, 2])
+)
+
+lines["fax_b"] = xr.concat([ones, rest], dim="fax_t_order")
+
+lines = lines.drop_vars(["temperature_coeffs", "t_order", "fax_vmr0"])
+
+# ---- MTCKD ------------------------------------------------------------------
+
+cont = data_sw["both_continuum_MT_CKD_4_3"].to_dataset().rename(CONT_RENAME)
+
+# ---- XFIT -------------------------------------------------------------------
+
+xsec = (
+    xr.concat(
+        [data_sw["XFIT"].to_dataset()[name] for name in TERM_NAMES],
+        dim="xsec_nterms",
+    )
+    .assign_coords(xsec_nterms=range(4))
+    .to_dataset()
+    .rename(
+        {
+            "species": "xsec_species_names",
+            "p00": "xsec_p",
+        }
+    )
+)
+
+# ---- Merge ------------------------------------------------------------------
+
+gas_optics_sw = xr.merge([lines, cont, xsec])
+
+gas_optics_sw["frequency"] = hz_to_kayser(gas_optics_sw["frequency"])
+gas_optics_sw = gas_optics_sw.rename({"frequency": "nu"})
+
+gas_optics_sw["weights"] = (
+    "nu",
+    hz_to_kayser(data_sw["DDQ"]["weights_hz"].values),
+)
+
+gas_optics_sw["solar_spectral_radiance"] = (
+    "nu",
+    data_sw["DDQ"]["spectral_solar_radiance"].values,
+)
+
+gas_optics_sw = clear_all_attrs(gas_optics_sw)
+gas_optics_sw = gas_optics_sw.transpose(*TRANSPOSE_ORDER)
+gas_optics_sw = gas_optics_sw[SW_ORDER]
+
+gas_optics_sw.to_netcdf("../data/ff/gas_optics_sw.nc")
+
+# %%
