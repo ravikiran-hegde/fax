@@ -177,7 +177,7 @@ from pyrte_rrtmgp.rrtmgp.data_files import (
 )
 
 gas_optics_sw = GasOptics(gas_optics_file=GasOpticsFiles.SW_G224)
-atmosphere = load_example_file(RFMIP_FILES.ATMOSPHERE)#.isel(expt=[1])
+atmosphere = load_example_file(RFMIP_FILES.ATMOSPHERE)  # .isel(expt=[1])
 atmosphere["pres_level"] = xr.ufuncs.maximum(
     gas_optics_sw.press_min,
     atmosphere["pres_level"],
@@ -214,7 +214,10 @@ gas_optics_sw.compute(
     add_to_input=True,
 )
 
+# discount for rayleigh scattering
+atmosphere["tau"] = atmosphere["tau"] * (1.0 - atmosphere["ssa"])
 atmosphere["ssa"] = xr.zeros_like(atmosphere["ssa"])
+
 rrtmg_fluxes = atmosphere.rte.solve(
     add_to_input=False,
 )
