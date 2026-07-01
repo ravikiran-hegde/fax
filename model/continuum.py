@@ -30,6 +30,8 @@ from typing import Optional
 import numpy as np
 import xarray as xr
 
+from model.constants import CM_TO_M
+
 from .abstract_class import (
     ARRAYLIKE,
     AbsorberConfig,
@@ -153,6 +155,12 @@ class ContinuumAbsorber(SingleSpeciesModel, SavableModel):
             continuum_ds = continuum_ds.swap_dims(
                 {"wavenumbers": "frequency"}
             ).drop_vars("wavenumbers")
+        for var in continuum_ds.data_vars:
+            if continuum_ds[var].attrs.get("units", None) == "cm**2/molecule cm-1":
+                continuum_ds[var] = (
+                    continuum_ds[var] / CM_TO_M**2
+                )  # Convert from cm^2 to m^2
+                continuum_ds[var].attrs["units"] = "m**2/molecule cm-1"
 
         species_name = self.config.species
         continuum_ds.attrs["continuum_type"] = self.config.continuum_type
@@ -303,7 +311,6 @@ class SelfContinuumAbsorber(ContinuumAbsorber):
             * partial_p_ratio
             * (temperature_ratio ** (self.self_texp + 1.0))
             * rad_fun(self.config.frequency_grid, temperature[:, None])
-            * 1e-4  # Convert from cm^2 to m^2
         )
 
         return xsec
@@ -359,7 +366,6 @@ class ForeignContinuumAbsorber(ContinuumAbsorber):
             * partial_p_ratio
             * temperature_ratio
             * rad_fun(self.config.frequency_grid, temperature[:, None])
-            * 1e-4  # Convert from cm^2 to m^2
         )
 
         return xsec

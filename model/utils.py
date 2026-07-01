@@ -33,7 +33,7 @@ def rad_fun(nu, T):
 
     Returns:
     --------
-    float or numpy.ndarray
+    cm float or numpy.ndarray
         The calculated radiation function factor.
     """
 
