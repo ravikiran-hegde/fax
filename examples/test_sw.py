@@ -168,6 +168,10 @@ ddq.attrs["source"] = "../data/solar_spectra/solar_spectrum_July_2008.xml"
 ddq.attrs["model_class"] = "DDQ"
 
 ddq["weights_hz"] = ("frequency", kayser_to_hz(kayser_weights))
+
+ddq_rayleigh = xr.load_dataset("../data/ddq/DDQ_Rayleigh.h5")
+
+ddq["xsec_rayleigh"] = ("frequency", ddq_rayleigh["Rayleigh_xsec"].values)
 # %% Save to nc
 
 datatree = xr.DataTree()

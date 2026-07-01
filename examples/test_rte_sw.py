@@ -105,6 +105,44 @@ def read_rfmip_profiles(
     return atm_ds
 
 
+def rayleigh_cross_section(kayser):
+    """
+    Rayleigh scattering cross section.
+
+    Parameters
+    ----------
+    kayser : float or ndarray
+        Spectroscopic wavenumber [cm^-1]
+
+    Returns
+    -------
+    sigma : float or ndarray
+        Rayleigh cross section [cm^2 molecule^-1]
+    """
+
+    # wavelength in microns
+    lam_um = 1.0e4 / kayser
+
+    # refractive index (Edlen/Bodhaine)
+    n_minus1 = (
+        8060.51
+        + 2480990.0 / (132.274 - 1.0 / lam_um**2)
+        + 17455.7 / (39.32957 - 1.0 / lam_um**2)
+    ) * 1e-8
+
+    n = 1.0 + n_minus1
+
+    # King factor
+    Fk = 1.034 + 3.17e-4 / lam_um**2
+
+    # Loschmidt number [cm^-3]
+    Ns = 2.546899e19
+
+    sigma = (24 * np.pi**3) / (Ns**2) * kayser**4 * ((n**2 - 1) / (n**2 + 2)) ** 2 * Fk
+
+    return sigma / 1e4  # convert from cm^2 to m^2
+
+
 # %% Load RFMIP Profiles
 atm_ds = read_rfmip_profiles(site=None, expt=None)
 flat_ds = atm_ds.stack(atm_points=("expt", "site", "layer"))
@@ -123,9 +161,15 @@ rte_input = tau_da.sum(dim="species").to_dataset(
     name="tau"
 )  # .rename_dims({"frequency": "gpt"})
 
-# rte_input = atm_ds
-# rte_input["tau"] = tau_da.sum(dim="species")
-rte_input["ssa"] = xr.zeros_like(rte_input["tau"])
+rte_input["tau_rayleigh"] = (
+    gas_optics_dt["DDQ"]["xsec_rayleigh"] * atm_ds["N_per_m2_dry"]
+)
+rte_input["tau"] = rte_input["tau"] + rte_input["tau_rayleigh"]
+rte_input["ssa"] = rte_input["tau_rayleigh"] / (
+    rte_input["tau"] + rte_input["tau_rayleigh"]
+)
+
+# rte_input["ssa"] = xr.zeros_like(rte_input["tau"])
 rte_input["g"] = xr.zeros_like(rte_input["tau"])
 
 
@@ -214,9 +258,9 @@ gas_optics_sw.compute(
     add_to_input=True,
 )
 
-# discount for rayleigh scattering
-atmosphere["tau"] = atmosphere["tau"] * (1.0 - atmosphere["ssa"])
-atmosphere["ssa"] = xr.zeros_like(atmosphere["ssa"])
+# # discount for rayleigh scattering
+# atmosphere["tau"] = atmosphere["tau"] * (1.0 - atmosphere["ssa"])
+# atmosphere["ssa"] = xr.zeros_like(atmosphere["ssa"])
 
 rrtmg_fluxes = atmosphere.rte.solve(
     add_to_input=False,
