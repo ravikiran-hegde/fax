@@ -5,6 +5,7 @@ from pathlib import Path
 import xarray as xr
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from model.constants import CM_TO_M, LIGHT_SPEED
 from model.utils import hz_to_kayser
 
 
@@ -89,7 +90,6 @@ SW_ORDER = [
 # =============================================================================
 
 data_lw = xr.open_datatree("../data/ff/test_3_lw.nc").copy()
-
 # ---- Hinge rational ---------------------------------------------------------
 
 lines = data_lw["Hinge_Rational"].to_dataset().rename(LINE_RENAME)
@@ -116,11 +116,11 @@ rest = (
 lines["fax_b"] = xr.concat([ones, rest], dim="fax_t_order")
 
 lines = lines.drop_vars(["temperature_coeffs", "t_order", "fax_vmr0"])
-
+lines["fax_species_names"] = lines["fax_species_names"].str.lower()
 # ---- MTCKD ------------------------------------------------------------------
 
 cont = data_lw["both_continuum_MT_CKD_4_3"].to_dataset().rename(CONT_RENAME)
-
+cont["mtckd_species_names"] = cont["mtckd_species_names"].str.lower()
 # ---- XFIT -------------------------------------------------------------------
 
 xsec = (
@@ -137,7 +137,7 @@ xsec = (
         }
     )
 )
-
+xsec["xsec_species_names"] = xsec["xsec_species_names"].str.lower()
 # ---- Merge ------------------------------------------------------------------
 
 gas_optics_lw = xr.merge([lines, cont, xsec])
@@ -154,7 +154,7 @@ gas_optics_lw = clear_all_attrs(gas_optics_lw)
 gas_optics_lw = gas_optics_lw.transpose(*TRANSPOSE_ORDER)
 gas_optics_lw = gas_optics_lw[LW_ORDER]
 
-gas_optics_lw.to_netcdf("../data/ff/gas_optics_lw.nc")
+gas_optics_lw.to_netcdf("../../ddq-data/gas_optics_lw.nc")
 
 
 # =============================================================================
@@ -189,10 +189,12 @@ rest = (
 lines["fax_b"] = xr.concat([ones, rest], dim="fax_t_order")
 
 lines = lines.drop_vars(["temperature_coeffs", "t_order", "fax_vmr0"])
+lines["fax_species_names"] = lines["fax_species_names"].str.lower()
 
 # ---- MTCKD ------------------------------------------------------------------
 
 cont = data_sw["both_continuum_MT_CKD_4_3"].to_dataset().rename(CONT_RENAME)
+cont["mtckd_species_names"] = cont["mtckd_species_names"].str.lower()
 
 # ---- XFIT -------------------------------------------------------------------
 
@@ -210,6 +212,7 @@ xsec = (
         }
     )
 )
+xsec["xsec_species_names"] = xsec["xsec_species_names"].str.lower()
 
 # ---- Merge ------------------------------------------------------------------
 
@@ -225,13 +228,14 @@ gas_optics_sw["weights"] = (
 
 gas_optics_sw["solar_spectral_radiance"] = (
     "nu",
-    data_sw["DDQ"]["spectral_solar_radiance"].values,
+    data_sw["DDQ"]["spectral_solar_radiance"].values * LIGHT_SPEED * CM_TO_M,
 )
 
 gas_optics_sw = clear_all_attrs(gas_optics_sw)
 gas_optics_sw = gas_optics_sw.transpose(*TRANSPOSE_ORDER)
 gas_optics_sw = gas_optics_sw[SW_ORDER]
 
-gas_optics_sw.to_netcdf("../data/ff/gas_optics_sw.nc")
+gas_optics_sw.to_netcdf("../../ddq-data/gas_optics_sw.nc")
 
+# %%
 # %%
