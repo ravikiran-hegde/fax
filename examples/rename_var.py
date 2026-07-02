@@ -56,6 +56,7 @@ TRANSPOSE_ORDER = (
 LW_ORDER = [
     "nu",
     "weights",
+    "fax_nspecies",
     "fax_species_names",
     "fax_p0",
     "fax_T0",
@@ -66,9 +67,11 @@ LW_ORDER = [
     "fax_t_order",
     "fax_a",
     "fax_b",
+    "xsec_nspecies",
     "xsec_species_names",
     "xsec_nterms",
     "xsec_p",
+    "mtckd_nspecies",
     "mtckd_species_names",
     "mtckd_p0",
     "mtckd_T0",
@@ -80,7 +83,7 @@ LW_ORDER = [
 SW_ORDER = [
     "nu",
     "weights",
-    "solar_spectral_radiance",
+    "solar_spectral_irradiance",
     *LW_ORDER[2:],
     "rayleigh_xsec",
 ]
@@ -153,7 +156,6 @@ gas_optics_lw["weights"] = (
 
 gas_optics_lw = clear_all_attrs(gas_optics_lw)
 gas_optics_lw = gas_optics_lw.transpose(*TRANSPOSE_ORDER)
-gas_optics_lw = gas_optics_lw[LW_ORDER]
 
 gas_optics_lw = gas_optics_lw.assign_coords(
     fax_nspecies=("fax_species_names", range(gas_optics_lw.sizes["fax_species_names"])),
@@ -171,7 +173,9 @@ gas_optics_lw = (
     gas_optics_lw.swap_dims({"fax_species_names": "fax_nspecies"})
     .swap_dims({"xsec_species_names": "xsec_nspecies"})
     .swap_dims({"mtckd_species_names": "mtckd_nspecies"})
+    .reset_coords(["fax_species_names", "xsec_species_names", "mtckd_species_names"])
 )
+gas_optics_lw = gas_optics_lw[LW_ORDER]
 
 gas_optics_lw.to_netcdf("../../ddq-data/gas_optics_lw.nc")
 
@@ -245,9 +249,9 @@ gas_optics_sw["weights"] = (
     hz_to_kayser(data_sw["DDQ"]["weights_hz"].values),
 )
 
-gas_optics_sw["solar_spectral_radiance"] = (
+gas_optics_sw["solar_spectral_irradiance"] = (
     "nu",
-    data_sw["DDQ"]["spectral_solar_radiance"].values * LIGHT_SPEED * CM_TO_M,
+    data_sw["DDQ"]["spectral_solar_irradiance"].values #* LIGHT_SPEED * CM_TO_M,
 )
 gas_optics_sw["rayleigh_xsec"] = (
     "nu",
@@ -255,7 +259,7 @@ gas_optics_sw["rayleigh_xsec"] = (
 )
 gas_optics_sw = clear_all_attrs(gas_optics_sw)
 gas_optics_sw = gas_optics_sw.transpose(*TRANSPOSE_ORDER)
-gas_optics_sw = gas_optics_sw[SW_ORDER]
+
 
 gas_optics_sw = gas_optics_sw.assign_coords(
     fax_nspecies=("fax_species_names", range(gas_optics_sw.sizes["fax_species_names"])),
@@ -273,11 +277,9 @@ gas_optics_sw = (
     gas_optics_sw.swap_dims({"fax_species_names": "fax_nspecies"})
     .swap_dims({"xsec_species_names": "xsec_nspecies"})
     .swap_dims({"mtckd_species_names": "mtckd_nspecies"})
+    .reset_coords(["fax_species_names", "xsec_species_names", "mtckd_species_names"])
 )
-
-gas_optics_lw.to_netcdf("../../ddq-data/gas_optics_lw.nc")
-
-
+gas_optics_sw = gas_optics_sw[SW_ORDER]
 gas_optics_sw.to_netcdf("../../ddq-data/gas_optics_sw.nc")
 
 # %%

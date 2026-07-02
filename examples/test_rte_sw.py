@@ -144,7 +144,7 @@ def rayleigh_cross_section(kayser):
 
 
 # %% Load RFMIP Profiles
-atm_ds = read_rfmip_profiles(site=None, expt=None)
+atm_ds = read_rfmip_profiles(site=None, expt=[0])
 flat_ds = atm_ds.stack(atm_points=("expt", "site", "layer"))
 
 
@@ -161,27 +161,27 @@ rte_input = tau_da.sum(dim="species").to_dataset(
     name="tau"
 )  # .rename_dims({"frequency": "gpt"})
 
-rte_input["tau_rayleigh"] = (
-    gas_optics_dt["DDQ"]["xsec_rayleigh"] * atm_ds["N_per_m2_dry"]
-)
-rte_input["tau"] = rte_input["tau"] + rte_input["tau_rayleigh"]
-rte_input["ssa"] = rte_input["tau_rayleigh"] / (
-    rte_input["tau"] + rte_input["tau_rayleigh"]
-)
+# rte_input["tau_rayleigh"] = (
+#     gas_optics_dt["DDQ"]["xsec_rayleigh"] * atm_ds["N_per_m2_dry"] #* 1e2
+# )
+# rte_input["tau"] = rte_input["tau"] + rte_input["tau_rayleigh"]
+# rte_input["ssa"] = rte_input["tau_rayleigh"] / (
+#     rte_input["tau"] + rte_input["tau_rayleigh"]
+# )
 
-# rte_input["ssa"] = xr.zeros_like(rte_input["tau"])
+rte_input["ssa"] = xr.zeros_like(rte_input["tau"])
 rte_input["g"] = xr.zeros_like(rte_input["tau"])
 
 
 rte_input["weights_hz"] = ("frequency", gas_optics_dt["DDQ"]["weights_hz"].values)
 
-rte_input["solar_spectral_radiance"] = gas_optics_dt["DDQ"]["spectral_solar_radiance"]
+rte_input["solar_spectral_irradiance"] = gas_optics_dt["DDQ"]["spectral_solar_irradiance"]
 
 rte_input["mu0_solar"] = np.cos(np.radians(atm_ds["solar_zenith_angle"]))
 
-rte_input["toa_source"] = rte_input["solar_spectral_radiance"] * (
+rte_input["toa_source"] = rte_input["solar_spectral_irradiance"] * (
     atm_ds["total_solar_irradiance"]
-    / (rte_input["solar_spectral_radiance"] * rte_input["weights_hz"]).sum(
+    / (rte_input["solar_spectral_irradiance"] * rte_input["weights_hz"]).sum(
         dim="frequency"
     )
 )
@@ -221,7 +221,7 @@ from pyrte_rrtmgp.rrtmgp.data_files import (
 )
 
 gas_optics_sw = GasOptics(gas_optics_file=GasOpticsFiles.SW_G224)
-atmosphere = load_example_file(RFMIP_FILES.ATMOSPHERE)  # .isel(expt=[1])
+atmosphere = load_example_file(RFMIP_FILES.ATMOSPHERE).isel(expt=[0])
 atmosphere["pres_level"] = xr.ufuncs.maximum(
     gas_optics_sw.press_min,
     atmosphere["pres_level"],
@@ -259,8 +259,8 @@ gas_optics_sw.compute(
 )
 
 # # discount for rayleigh scattering
-# atmosphere["tau"] = atmosphere["tau"] * (1.0 - atmosphere["ssa"])
-# atmosphere["ssa"] = xr.zeros_like(atmosphere["ssa"])
+atmosphere["tau"] = atmosphere["tau"] * (1.0 - atmosphere["ssa"])
+atmosphere["ssa"] = xr.zeros_like(atmosphere["ssa"])
 
 rrtmg_fluxes = atmosphere.rte.solve(
     add_to_input=False,
@@ -273,19 +273,67 @@ rrtmg_fluxes["global_mean_toa_flux"] = (
 
 rrtmg_fluxes.sel(level=0)
 # %%
-# import matplotlib.pyplot as plt
 
-# plt.scatter(
-#     rrtmg_fluxes.site.values,
-#     (rrtmg_fluxes.brd_net_flux / fluxes.brd_net_flux).sel(level=0).values,
-# )
+# %%
+import matplotlib.pyplot as plt
+
+toa_diff = (rrtmg_fluxes.brd_net_flux - fluxes.brd_net_flux).sel(expt=0, level=0)
+# plot only daytime sites
+site_mask = (rrtmg_fluxes["sw_flux_down"].sel(expt=0, level=0) > 10).squeeze()
+toa_diff = toa_diff.where(site_mask, drop=True)
+
+fig, ax = plt.subplots(
+    1,
+    2,
+    figsize=(10, 5),
+    sharey=True,
+    gridspec_kw={"width_ratios": [4, 1], "wspace": 0.05},
+)
+
+ax[0].scatter(
+    toa_diff.site.values,
+    toa_diff.values,
+    s=1000 * atm_ds["profile_weight"].sel(site=toa_diff.site).values,
+    # alpha=0.7,
+    edgecolor="k",
+    linewidth=0.3,
+)
+ax[0].axhline(0, color="gray", linestyle="--", linewidth=1)
+ax[0].set_xlabel("Site")
+ax[0].set_ylabel("Difference in TOA flux (W/m^2)")
+ax[0].grid(alpha=0.5)
+
+ax[1].hist(
+    toa_diff.values,
+    bins=30,
+    orientation="horizontal",
+    color="steelblue",
+    # alpha=0.7,
+    edgecolor="k",
+    linewidth=0.3,
+)
+ax[1].axhline(0, color="gray", linestyle="--", linewidth=1)
+ax[1].set_xlabel("Count")
+ax[1].grid(alpha=0.5)
+ax[1].tick_params(labelleft=False)  # y labels only on the left plot
+
+fig.suptitle("TOA Flux Differences (RRTMG - Reference)")
+plt.tight_layout()
+plt.show()
+
+# %%
+rrttmg_fluxes = rrtmg_fluxes.sel(site=toa_diff.site.values.squeeze())
+fluxes = fluxes.sel(site=toa_diff.site.values.squeeze())
 print(
+    "Global daytime TOA flux difference (RRTMG - Reference):",
     (
-        (rrtmg_fluxes.brd_net_flux - fluxes.brd_net_flux).sel(level=0)
-        * atm_ds["profile_weight"]
+        (rrtmg_fluxes.brd_net_flux - fluxes.brd_net_flux).sel(
+            level=0,
+        )
+        * atm_ds["profile_weight"].sel(site=toa_diff.site.values.squeeze())
     )
     .sum(dim="site")
-    .values
+    .values,
 )
 
 # %%

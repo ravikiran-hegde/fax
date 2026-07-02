@@ -29,20 +29,21 @@ SELF_SCALING = {
 # %%
 species = {
     "H2O": None,
-    "CO2": ("CO2", 
-            # "CO2-CKDMT252"
-            ),  # ,
+    "CO2": (
+        "CO2",
+        "CO2-CKDMT252"
+    ),  # ,
     "O3": None,
     "O2": (
         "O2",  # "O2-*-1e12-1e99" produces parsing error
-        # "O2-CIAfunCKDMT100",
+        "O2-CIAfunCKDMT100",
     ),
     "CH4": None,
     "N2O": None,
     "N2": (
         "N2",
-        # "N2-CIAfunCKDMT252",
-        # "N2-CIArotCKDMT252",
+        "N2-CIAfunCKDMT252",
+        "N2-CIArotCKDMT252",
     ),
 }
 
@@ -149,18 +150,23 @@ absorbers["O3-XFIT"] = CrossFitAbsorber(
 
 
 # %% Solar spectra
-import pyarts3
+# import pyarts3
+# solar_source = pyarts3.xml.load(
+#     "../data/solar_spectra/solar_spectrum_July_2008.xml"
+# ).to_xarray()
+# solar_source = solar_source.rename({"Frequencys": "frequency"})
+# solar_source = xr.Dataset(
+#     {"spectral_solar_radiance": (("frequency",), solar_source.values[:, 0])},
+#     coords={"frequency": solar_source.frequency},
+# )
 
-solar_source = pyarts3.xml.load(
-    "../data/solar_spectra/solar_spectrum_July_2008.xml"
-).to_xarray()
-solar_source = solar_source.rename({"Frequencys": "frequency"})
-solar_source = xr.Dataset(
-    {"spectral_solar_radiance": (("frequency",), solar_source.values[:, 0])},
-    coords={"frequency": solar_source.frequency},
+# ddq = solar_source.interp(frequency=frequency_grid, method="cubic")
+
+ddq_solar = xr.load_dataset("../data/solar_spectra/DDQ_SW_source.h5")
+ddq = xr.Dataset(
+    {"spectral_solar_irradiance": (("frequency",), ddq_solar.solar_source.values)},
+    coords={"frequency": frequency_grid},
 )
-
-ddq = solar_source.interp(frequency=frequency_grid, method="cubic")
 ddq.attrs["description"] = (
     "Solar spectrum from July 2008, interpolated to model frequency grid"
 )
@@ -171,7 +177,10 @@ ddq["weights_hz"] = ("frequency", kayser_to_hz(kayser_weights))
 
 ddq_rayleigh = xr.load_dataset("../data/ddq/DDQ_Rayleigh.h5")
 
-ddq["xsec_rayleigh"] = ("frequency", ddq_rayleigh["Rayleigh_xsec"].values)
+ddq["xsec_rayleigh"] = (
+    "frequency",
+    ddq_rayleigh["Rayleigh_xsec"].values# * 100,
+)  # idk why 100 gives the right answers
 # %% Save to nc
 
 datatree = xr.DataTree()
