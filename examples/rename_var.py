@@ -43,13 +43,13 @@ CONT_RENAME = {
 }
 
 TRANSPOSE_ORDER = (
+    "nu",
+    "fax_species_names",
     "fax_p_nterms",
     "fax_t_order",
-    "fax_species_names",
-    "xsec_nterms",
     "xsec_species_names",
+    "xsec_nterms",
     "mtckd_species_names",
-    "nu",
 )
 
 LW_ORDER = [
@@ -175,6 +175,11 @@ gas_optics_lw = (
     .reset_coords(["fax_species_names", "xsec_species_names", "mtckd_species_names"])
 )
 gas_optics_lw = gas_optics_lw[LW_ORDER]
+# convert str vars to char8
+for vars in ["xsec_species_names", "fax_species_names", "mtckd_species_names"]:
+    gas_optics_lw[vars] = gas_optics_lw[vars].astype("S32")
+    gas_optics_lw[vars].encoding["dtype"] = "S1"
+
 
 gas_optics_lw.to_netcdf("../../ddq-data/gas_optics_lw.nc")
 
@@ -279,6 +284,10 @@ gas_optics_sw = (
     .reset_coords(["fax_species_names", "xsec_species_names", "mtckd_species_names"])
 )
 gas_optics_sw = gas_optics_sw[SW_ORDER]
+for vars in ["xsec_species_names", "fax_species_names", "mtckd_species_names"]:
+    gas_optics_sw[vars] = gas_optics_sw[vars].astype("S32")
+    gas_optics_sw[vars].encoding["dtype"] = "S1"
+
 gas_optics_sw.to_netcdf("../../ddq-data/gas_optics_sw.nc")
 
 # %%
@@ -299,7 +308,7 @@ variables:
 	double solar_spectral_irradiance(nu) ;
 
 	int64 fax_nspecies(fax_nspecies) ;
-	string fax_species_names(fax_nspecies) ;
+	char fax_species_names(fax_nspecies) ;
 	double fax_p0(fax_nspecies) ;
 	double fax_T0(fax_nspecies) ;
 	double fax_S(fax_nspecies) ;
@@ -311,12 +320,12 @@ variables:
 	double fax_b(fax_t_order, fax_nspecies, nu) ;
 
 	int64 xsec_nspecies(xsec_nspecies) ;
-	string xsec_species_names(xsec_nspecies) ;
+	char xsec_species_names(xsec_nspecies) ;
 	int64 xsec_nterms(xsec_nterms) ;
 	double xsec_p(xsec_nterms, xsec_nspecies, nu) ;
     
 	int64 mtckd_nspecies(mtckd_nspecies) ;
-	string mtckd_species_names(mtckd_nspecies) ;
+	char mtckd_species_names(mtckd_nspecies) ;
 	double mtckd_p0(mtckd_nspecies) ;
 	double mtckd_T0(mtckd_nspecies) ;
 	double mtckd_cself(mtckd_nspecies, nu) ;
@@ -326,3 +335,5 @@ variables:
 }
 
 """
+
+# %%
