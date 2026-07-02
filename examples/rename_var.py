@@ -82,6 +82,7 @@ SW_ORDER = [
     "weights",
     "solar_spectral_radiance",
     *LW_ORDER[2:],
+    "rayleigh_xsec",
 ]
 
 
@@ -153,6 +154,24 @@ gas_optics_lw["weights"] = (
 gas_optics_lw = clear_all_attrs(gas_optics_lw)
 gas_optics_lw = gas_optics_lw.transpose(*TRANSPOSE_ORDER)
 gas_optics_lw = gas_optics_lw[LW_ORDER]
+
+gas_optics_lw = gas_optics_lw.assign_coords(
+    fax_nspecies=("fax_species_names", range(gas_optics_lw.sizes["fax_species_names"])),
+    xsec_nspecies=(
+        "xsec_species_names",
+        range(gas_optics_lw.sizes["xsec_species_names"]),
+    ),
+    mtckd_nspecies=(
+        "mtckd_species_names",
+        range(gas_optics_lw.sizes["mtckd_species_names"]),
+    ),
+)
+
+gas_optics_lw = (
+    gas_optics_lw.swap_dims({"fax_species_names": "fax_nspecies"})
+    .swap_dims({"xsec_species_names": "xsec_nspecies"})
+    .swap_dims({"mtckd_species_names": "mtckd_nspecies"})
+)
 
 gas_optics_lw.to_netcdf("../../ddq-data/gas_optics_lw.nc")
 
@@ -230,10 +249,34 @@ gas_optics_sw["solar_spectral_radiance"] = (
     "nu",
     data_sw["DDQ"]["spectral_solar_radiance"].values * LIGHT_SPEED * CM_TO_M,
 )
-
+gas_optics_sw["rayleigh_xsec"] = (
+    "nu",
+    data_sw["DDQ"]["xsec_rayleigh"].values,
+)
 gas_optics_sw = clear_all_attrs(gas_optics_sw)
 gas_optics_sw = gas_optics_sw.transpose(*TRANSPOSE_ORDER)
 gas_optics_sw = gas_optics_sw[SW_ORDER]
+
+gas_optics_sw = gas_optics_sw.assign_coords(
+    fax_nspecies=("fax_species_names", range(gas_optics_sw.sizes["fax_species_names"])),
+    xsec_nspecies=(
+        "xsec_species_names",
+        range(gas_optics_sw.sizes["xsec_species_names"]),
+    ),
+    mtckd_nspecies=(
+        "mtckd_species_names",
+        range(gas_optics_sw.sizes["mtckd_species_names"]),
+    ),
+)
+
+gas_optics_sw = (
+    gas_optics_sw.swap_dims({"fax_species_names": "fax_nspecies"})
+    .swap_dims({"xsec_species_names": "xsec_nspecies"})
+    .swap_dims({"mtckd_species_names": "mtckd_nspecies"})
+)
+
+gas_optics_lw.to_netcdf("../../ddq-data/gas_optics_lw.nc")
+
 
 gas_optics_sw.to_netcdf("../../ddq-data/gas_optics_sw.nc")
 
