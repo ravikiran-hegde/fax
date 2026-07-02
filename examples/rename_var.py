@@ -15,6 +15,9 @@ def clear_all_attrs(ds):
         ds[var].attrs.clear()
     return ds
 
+def pad_species_names(da, width=32):
+    """Right-pad a string DataArray with spaces to a fixed width (Fortran-style)."""
+    return da.str.pad(width=width, side="right", fillchar=" ")
 
 # -----------------------------------------------------------------------------
 # %% Order and renames
@@ -119,12 +122,11 @@ rest = (
 lines["fax_b"] = xr.concat([ones, rest], dim="fax_t_order")
 
 lines = lines.drop_vars(["temperature_coeffs", "t_order", "fax_vmr0"])
-lines["fax_species_names"] = lines["fax_species_names"].str.lower()
+lines["fax_species_names"] = pad_species_names(lines["fax_species_names"].str.lower())
 # ---- MTCKD ------------------------------------------------------------------
 
 cont = data_lw["both_continuum_MT_CKD_4_3"].to_dataset().rename(CONT_RENAME)
-cont["mtckd_species_names"] = cont["mtckd_species_names"].str.lower()
-# ---- XFIT -------------------------------------------------------------------
+cont["mtckd_species_names"] = pad_species_names(cont["mtckd_species_names"])
 
 xsec = (
     xr.concat(
@@ -140,7 +142,7 @@ xsec = (
         }
     )
 )
-xsec["xsec_species_names"] = xsec["xsec_species_names"].str.lower()
+xsec["xsec_species_names"] = pad_species_names(xsec["xsec_species_names"].str.lower())
 # ---- Merge ------------------------------------------------------------------
 
 gas_optics_lw = xr.merge([lines, cont, xsec])
@@ -175,11 +177,10 @@ gas_optics_lw = (
     .reset_coords(["fax_species_names", "xsec_species_names", "mtckd_species_names"])
 )
 gas_optics_lw = gas_optics_lw[LW_ORDER]
-# convert str vars to char8
+
 for vars in ["xsec_species_names", "fax_species_names", "mtckd_species_names"]:
     gas_optics_lw[vars] = gas_optics_lw[vars].astype("S32")
     gas_optics_lw[vars].encoding["dtype"] = "S1"
-
 
 gas_optics_lw.to_netcdf("../../ddq-data/gas_optics_lw.nc")
 
@@ -216,12 +217,12 @@ rest = (
 lines["fax_b"] = xr.concat([ones, rest], dim="fax_t_order")
 
 lines = lines.drop_vars(["temperature_coeffs", "t_order", "fax_vmr0"])
-lines["fax_species_names"] = lines["fax_species_names"].str.lower()
+lines["fax_species_names"] = pad_species_names(lines["fax_species_names"].str.lower())
 
 # ---- MTCKD ------------------------------------------------------------------
 
 cont = data_sw["both_continuum_MT_CKD_4_3"].to_dataset().rename(CONT_RENAME)
-cont["mtckd_species_names"] = cont["mtckd_species_names"].str.lower()
+cont["mtckd_species_names"] = pad_species_names(cont["mtckd_species_names"].str.lower())
 
 # ---- XFIT -------------------------------------------------------------------
 
@@ -239,8 +240,7 @@ xsec = (
         }
     )
 )
-xsec["xsec_species_names"] = xsec["xsec_species_names"].str.lower()
-
+xsec["xsec_species_names"] = pad_species_names(xsec["xsec_species_names"].str.lower())
 # ---- Merge ------------------------------------------------------------------
 
 gas_optics_sw = xr.merge([lines, cont, xsec])
