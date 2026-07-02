@@ -161,15 +161,15 @@ rte_input = tau_da.sum(dim="species").to_dataset(
     name="tau"
 )  # .rename_dims({"frequency": "gpt"})
 
-# rte_input["tau_rayleigh"] = (
-#     gas_optics_dt["DDQ"]["xsec_rayleigh"] * atm_ds["N_per_m2_dry"] #* 1e2
-# )
-# rte_input["tau"] = rte_input["tau"] + rte_input["tau_rayleigh"]
-# rte_input["ssa"] = rte_input["tau_rayleigh"] / (
-#     rte_input["tau"] + rte_input["tau_rayleigh"]
-# )
+rte_input["tau_rayleigh"] = (
+    gas_optics_dt["DDQ"]["xsec_rayleigh"] * atm_ds["N_per_m2_dry"] #* 1e2
+)
+rte_input["tau"] = rte_input["tau"] + rte_input["tau_rayleigh"]
+rte_input["ssa"] = rte_input["tau_rayleigh"] / (
+    rte_input["tau"]
+)
 
-rte_input["ssa"] = xr.zeros_like(rte_input["tau"])
+# rte_input["ssa"] = xr.zeros_like(rte_input["tau"])
 rte_input["g"] = xr.zeros_like(rte_input["tau"])
 
 
@@ -259,8 +259,8 @@ gas_optics_sw.compute(
 )
 
 # # discount for rayleigh scattering
-atmosphere["tau"] = atmosphere["tau"] * (1.0 - atmosphere["ssa"])
-atmosphere["ssa"] = xr.zeros_like(atmosphere["ssa"])
+# atmosphere["tau"] = atmosphere["tau"] * (1.0 - atmosphere["ssa"])
+# atmosphere["ssa"] = xr.zeros_like(atmosphere["ssa"])
 
 rrtmg_fluxes = atmosphere.rte.solve(
     add_to_input=False,

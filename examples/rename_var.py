@@ -5,7 +5,6 @@ from pathlib import Path
 import xarray as xr
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from model.constants import CM_TO_M, LIGHT_SPEED
 from model.utils import hz_to_kayser
 
 
@@ -251,7 +250,7 @@ gas_optics_sw["weights"] = (
 
 gas_optics_sw["solar_spectral_irradiance"] = (
     "nu",
-    data_sw["DDQ"]["spectral_solar_irradiance"].values #* LIGHT_SPEED * CM_TO_M,
+    data_sw["DDQ"]["spectral_solar_irradiance"].values,  # * LIGHT_SPEED * CM_TO_M,
 )
 gas_optics_sw["rayleigh_xsec"] = (
     "nu",
@@ -284,3 +283,46 @@ gas_optics_sw.to_netcdf("../../ddq-data/gas_optics_sw.nc")
 
 # %%
 # %%
+"""
+netcdf gas_optics_sw {
+dimensions:
+	nu = 64 ;
+	fax_nspecies = 7 ;
+	fax_p_nterms = 4 ;
+	fax_t_order = 3 ;
+	xsec_nspecies = 3 ;
+	xsec_nterms = 4 ;
+	mtckd_nspecies = 1 ;
+variables:
+	double nu(nu) 
+	double weights(nu) ;
+	double solar_spectral_irradiance(nu) ;
+
+	int64 fax_nspecies(fax_nspecies) ;
+	string fax_species_names(fax_nspecies) ;
+	double fax_p0(fax_nspecies) ;
+	double fax_T0(fax_nspecies) ;
+	double fax_S(fax_nspecies) ;
+	double fax_sigma0(fax_nspecies, nu) ;
+	int64 fax_p_nterms(fax_p_nterms) ;
+	double fax_c(fax_p_nterms, fax_nspecies, nu) ;
+	int64 fax_t_order(fax_t_order) ;
+	double fax_a(fax_t_order, fax_nspecies, nu) ;
+	double fax_b(fax_t_order, fax_nspecies, nu) ;
+
+	int64 xsec_nspecies(xsec_nspecies) ;
+	string xsec_species_names(xsec_nspecies) ;
+	int64 xsec_nterms(xsec_nterms) ;
+	double xsec_p(xsec_nterms, xsec_nspecies, nu) ;
+    
+	int64 mtckd_nspecies(mtckd_nspecies) ;
+	string mtckd_species_names(mtckd_nspecies) ;
+	double mtckd_p0(mtckd_nspecies) ;
+	double mtckd_T0(mtckd_nspecies) ;
+	double mtckd_cself(mtckd_nspecies, nu) ;
+	double mtckd_n(mtckd_nspecies, nu) ;
+	double mtckd_cfrgn(mtckd_nspecies, nu) ;
+	double rayleigh_xsec(nu) ;
+}
+
+"""
