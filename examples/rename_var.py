@@ -15,9 +15,19 @@ def clear_all_attrs(ds):
         ds[var].attrs.clear()
     return ds
 
+
 def pad_species_names(da, width=32):
     """Right-pad a string DataArray with spaces to a fixed width (Fortran-style)."""
     return da.str.pad(width=width, side="right", fillchar=" ")
+
+
+def apply_variable_attrs(ds, metadata):
+    ds = ds.copy()
+    for name, attrs in metadata.items():
+        if name in ds.variables:
+            ds[name].attrs.update(attrs)
+    return ds
+
 
 # -----------------------------------------------------------------------------
 # %% Order and renames
@@ -91,6 +101,114 @@ SW_ORDER = [
 ]
 
 
+VARIABLE_ATTRS = {
+    "nu": {
+        "units": "cm^-1",
+        "description": "DDQ wavenumber grid.",
+    },
+    "weights": {
+        "units": "",
+        "description": "DDQ weights.",
+    },
+    "solar_spectral_irradiance": {
+        "units": "W m^-2",
+        "description": "Top-of-atmosphere solar spectral irradiance. weights * solar_spectral_irradiance integrates to 1361 W m^-2.",
+    },
+    "fax_nspecies": {
+        "units": "1",
+        "description": "Fax species index.",
+    },
+    "fax_species_names": {
+        "units": "",
+        "description": "Species names for which fax model is available.",
+    },
+    "fax_p0": {
+        "units": "Pa",
+        "description": "Reference pressure for fax_sigma0.",
+    },
+    "fax_T0": {
+        "units": "K",
+        "description": "Reference temperature for fax_sigma0.",
+    },
+    "fax_S": {
+        "units": "1",
+        "description": "Self-broadening pressure scaling factor.",
+    },
+    "fax_sigma0": {
+        "units": "m^2 molecule^-1",
+        "description": "Reference cross section at fax_p0 and fax_T0, and vmr = 1e-9.",
+    },
+    "fax_p_nterms": {
+        "units": "1",
+        "description": "Coefficient index for the hinge function. Order: const, slope_below, slope_above, hinge_point",
+    },
+    "fax_c": {
+        "units": "",
+        "description": "Coefficients for the hinge function. Order: const, slope_below, slope_above, hinge_point",
+    },
+    "fax_t_order": {
+        "units": "1",
+        "description": "Polynomial term index for the temperature rational function. Order: const, x, x^2.",
+    },
+    "fax_a": {
+        "units": "",
+        "description": "Polynomial coefficients for numerator of Temperature rational function.",
+    },
+    "fax_b": {
+        "units": "",
+        "description": "Polynomial coefficients for denominator of Temperature rational function.",
+    },
+    "xsec_nspecies": {
+        "units": "1",
+        "description": "XFIT species index.",
+    },
+    "xsec_species_names": {
+        "units": "",
+        "description": "Species names for which XFIT model is available.",
+    },
+    "xsec_nterms": {
+        "units": "1",
+        "description": "XFIT coefficients index. order: p0 + p1 * T + p2 * T^2 + p3 * pressure",
+    },
+    "xsec_p": {
+        "units": "result: m^2 molecule^-1, T, pressure in SI units",
+        "description": "XFIT polynomial coefficients. order: p0 + p1 * T + p2 * T^2 + p3 * pressure",
+    },
+    "mtckd_nspecies": {
+        "units": "1",
+        "description": "MT_CKD species index.",
+    },
+    "mtckd_species_names": {
+        "units": "",
+        "description": "Species names for which MT_CKD4.3 model is available.",
+    },
+    "mtckd_p0": {
+        "units": "Pa",
+        "description": "Reference pressure for the MT_CKD continuum.",
+    },
+    "mtckd_T0": {
+        "units": "K",
+        "description": "Reference temperature for the MT_CKD continuum.",
+    },
+    "mtckd_cself": {
+        "units": "m^2 molecule^-1 cm",
+        "description": "Self-continuum coefficient.",
+    },
+    "mtckd_n": {
+        "units": "1",
+        "description": "Self-continuum temperature exponent.",
+    },
+    "mtckd_cfrgn": {
+        "units": "m^2 molecule^-1 cm",
+        "description": "Foreign-continuum coefficient.",
+    },
+    "rayleigh_xsec": {
+        "units": "m^2 molecule^-1",
+        "description": "Rayleigh scattering cross section.",
+    },
+}
+
+
 # =============================================================================
 # %%Longwave
 # =============================================================================
@@ -122,11 +240,9 @@ rest = (
 lines["fax_b"] = xr.concat([ones, rest], dim="fax_t_order")
 
 lines = lines.drop_vars(["temperature_coeffs", "t_order", "fax_vmr0"])
-lines["fax_species_names"] = pad_species_names(lines["fax_species_names"].str.lower())
-# ---- MTCKD ------------------------------------------------------------------
 
+# ---- MTCKD ------------------------------------------------------------------
 cont = data_lw["both_continuum_MT_CKD_4_3"].to_dataset().rename(CONT_RENAME)
-cont["mtckd_species_names"] = pad_species_names(cont["mtckd_species_names"])
 
 xsec = (
     xr.concat(
@@ -142,7 +258,6 @@ xsec = (
         }
     )
 )
-xsec["xsec_species_names"] = pad_species_names(xsec["xsec_species_names"].str.lower())
 # ---- Merge ------------------------------------------------------------------
 
 gas_optics_lw = xr.merge([lines, cont, xsec])
@@ -177,10 +292,16 @@ gas_optics_lw = (
     .reset_coords(["fax_species_names", "xsec_species_names", "mtckd_species_names"])
 )
 gas_optics_lw = gas_optics_lw[LW_ORDER]
-
+# gas_optics_lw["mtckd_species_names"] = gas_optics_lw["mtckd_species_names"][0]
+# gas_optics_lw["mtckd_p0"] = gas_optics_lw["mtckd_p0"][0]
+# gas_optics_lw["mtckd_T0"] = gas_optics_lw["mtckd_T0"][0]
 for vars in ["xsec_species_names", "fax_species_names", "mtckd_species_names"]:
-    gas_optics_lw[vars] = gas_optics_lw[vars].astype("S32")
+    gas_optics_lw[vars] = pad_species_names(gas_optics_lw[vars].str.lower()).astype(
+        "S32"
+    )
     gas_optics_lw[vars].encoding["dtype"] = "S1"
+
+gas_optics_lw = apply_variable_attrs(gas_optics_lw, VARIABLE_ATTRS)
 
 gas_optics_lw.to_netcdf("../../ddq-data/gas_optics_lw.nc")
 
@@ -217,12 +338,10 @@ rest = (
 lines["fax_b"] = xr.concat([ones, rest], dim="fax_t_order")
 
 lines = lines.drop_vars(["temperature_coeffs", "t_order", "fax_vmr0"])
-lines["fax_species_names"] = pad_species_names(lines["fax_species_names"].str.lower())
 
 # ---- MTCKD ------------------------------------------------------------------
 
 cont = data_sw["both_continuum_MT_CKD_4_3"].to_dataset().rename(CONT_RENAME)
-cont["mtckd_species_names"] = pad_species_names(cont["mtckd_species_names"].str.lower())
 
 # ---- XFIT -------------------------------------------------------------------
 
@@ -240,7 +359,7 @@ xsec = (
         }
     )
 )
-xsec["xsec_species_names"] = pad_species_names(xsec["xsec_species_names"].str.lower())
+
 # ---- Merge ------------------------------------------------------------------
 
 gas_optics_sw = xr.merge([lines, cont, xsec])
@@ -284,9 +403,15 @@ gas_optics_sw = (
     .reset_coords(["fax_species_names", "xsec_species_names", "mtckd_species_names"])
 )
 gas_optics_sw = gas_optics_sw[SW_ORDER]
+# gas_optics_sw["mtckd_p0"] = gas_optics_sw["mtckd_p0"][0]
+# gas_optics_sw["mtckd_T0"] = gas_optics_sw["mtckd_T0"][0]
 for vars in ["xsec_species_names", "fax_species_names", "mtckd_species_names"]:
-    gas_optics_sw[vars] = gas_optics_sw[vars].astype("S32")
+    gas_optics_sw[vars] = pad_species_names(gas_optics_sw[vars].str.lower()).astype(
+        "S32"
+    )
     gas_optics_sw[vars].encoding["dtype"] = "S1"
+
+gas_optics_sw = apply_variable_attrs(gas_optics_sw, VARIABLE_ATTRS)
 
 gas_optics_sw.to_netcdf("../../ddq-data/gas_optics_sw.nc")
 
