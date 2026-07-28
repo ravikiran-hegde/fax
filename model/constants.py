@@ -20,3 +20,14 @@ REF_TEMPERATURE = 150.0
 REF_VMR = 1e-9
 
 EPS = 1e-200
+
+SELF_SCALING = { #unweighted median ratio of self-broadened to air-broadened half-widths
+    "H2O": 4.078,
+    "CO2": 0.282,
+    "O3": 0.247,
+    "CH4": 0.311,
+    "N2O": 0.254,
+    "CO": 0.067,
+    "O2": 0.004,
+    "N2": 0.006,
+}
