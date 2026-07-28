@@ -292,9 +292,8 @@ gas_optics_lw = (
     .reset_coords(["fax_species_names", "xsec_species_names", "mtckd_species_names"])
 )
 gas_optics_lw = gas_optics_lw[LW_ORDER]
-# gas_optics_lw["mtckd_species_names"] = gas_optics_lw["mtckd_species_names"][0]
-# gas_optics_lw["mtckd_p0"] = gas_optics_lw["mtckd_p0"][0]
-# gas_optics_lw["mtckd_T0"] = gas_optics_lw["mtckd_T0"][0]
+gas_optics_lw["mtckd_p0"] = gas_optics_lw["mtckd_p0"][0]
+gas_optics_lw["mtckd_T0"] = gas_optics_lw["mtckd_T0"][0]
 for vars in ["xsec_species_names", "fax_species_names", "mtckd_species_names"]:
     gas_optics_lw[vars] = pad_species_names(gas_optics_lw[vars].str.lower()).astype(
         "S32"
@@ -403,8 +402,8 @@ gas_optics_sw = (
     .reset_coords(["fax_species_names", "xsec_species_names", "mtckd_species_names"])
 )
 gas_optics_sw = gas_optics_sw[SW_ORDER]
-# gas_optics_sw["mtckd_p0"] = gas_optics_sw["mtckd_p0"][0]
-# gas_optics_sw["mtckd_T0"] = gas_optics_sw["mtckd_T0"][0]
+gas_optics_sw["mtckd_p0"] = gas_optics_sw["mtckd_p0"][0]
+gas_optics_sw["mtckd_T0"] = gas_optics_sw["mtckd_T0"][0]
 for vars in ["xsec_species_names", "fax_species_names", "mtckd_species_names"]:
     gas_optics_sw[vars] = pad_species_names(gas_optics_sw[vars].str.lower()).astype(
         "S32"
