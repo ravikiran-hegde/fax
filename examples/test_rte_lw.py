@@ -121,7 +121,7 @@ flat_ds = atm_ds.stack(atm_points=("expt", "site", "layer"))
 
 
 # %% Instantiate a GasOptics
-gas_optics_dt = xr.open_datatree("../data/ff/test_3_lw.nc")
+gas_optics_dt = xr.open_datatree("../data/ff/gas_optics_DDQ_LW.nc")
 gas_optics = GasOptics.from_datatree(gas_optics_dt)
 
 
@@ -244,8 +244,8 @@ rrtmg_fluxes.sel(level=0)
 import matplotlib.pyplot as plt
 
 toa_diff = (rrtmg_fluxes.brd_net_flux - fluxes.brd_net_flux).sel(expt=0, level=0)
-# plot only daytime sites
-toa_diff = toa_diff.where(site_mask, drop=True)
+# # plot only daytime sites
+# toa_diff = toa_diff.where(site_mask, drop=True)
 
 fig, ax = plt.subplots(
     1,

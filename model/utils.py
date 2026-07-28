@@ -7,7 +7,14 @@ import numpy as np
 import xarray as xr
 from numpy.typing import ArrayLike
 
-from model.constants import REF_PRESSURE, REF_TEMPERATURE, REF_VMR
+from model.constants import (
+    BOLTZMANN,
+    LIGHT_SPEED,
+    PLANCK,
+    REF_PRESSURE,
+    REF_TEMPERATURE,
+    REF_VMR,
+)
 
 from .constants import KAYSER_TO_HZ
 
@@ -576,3 +583,48 @@ def sample_atmospheres_temperature_fixed(
     T_out = np.full(N_samples, T_val)
 
     return p, T_out
+
+
+def rayleigh_cross_section(kayser):
+    """
+    Rayleigh scattering cross section.
+
+    Parameters
+    ----------
+    kayser : float or ndarray
+        Spectroscopic wavenumber [cm^-1]
+
+    Returns
+    -------
+    sigma : float or ndarray
+        Rayleigh cross section [cm^2 molecule^-1]
+    """
+
+    # wavelength in microns
+    lam_um = 1.0e4 / kayser
+
+    # refractive index (Edlen/Bodhaine)
+    n_minus1 = (
+        8060.51
+        + 2480990.0 / (132.274 - 1.0 / lam_um**2)
+        + 17455.7 / (39.32957 - 1.0 / lam_um**2)
+    ) * 1e-8
+
+    n = 1.0 + n_minus1
+
+    # King factor
+    Fk = 1.034 + 3.17e-4 / lam_um**2
+
+    # Loschmidt number [cm^-3]
+    Ns = 2.546899e19
+
+    sigma = (24 * np.pi**3) / (Ns**2) * kayser**4 * ((n**2 - 1) / (n**2 + 2)) ** 2 * Fk
+
+    return sigma / 1e4  # convert from cm^2 to m^2
+
+
+def planck_nu(f_grid_hz, temperature):
+    """Return Planck Flux in W/m^2/Hz."""
+
+    exponent = PLANCK * f_grid_hz / (BOLTZMANN * temperature)
+    return (2 * PLANCK * f_grid_hz**3 / LIGHT_SPEED**2) / np.expm1(exponent)

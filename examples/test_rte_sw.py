@@ -105,51 +105,13 @@ def read_rfmip_profiles(
     return atm_ds
 
 
-def rayleigh_cross_section(kayser):
-    """
-    Rayleigh scattering cross section.
-
-    Parameters
-    ----------
-    kayser : float or ndarray
-        Spectroscopic wavenumber [cm^-1]
-
-    Returns
-    -------
-    sigma : float or ndarray
-        Rayleigh cross section [cm^2 molecule^-1]
-    """
-
-    # wavelength in microns
-    lam_um = 1.0e4 / kayser
-
-    # refractive index (Edlen/Bodhaine)
-    n_minus1 = (
-        8060.51
-        + 2480990.0 / (132.274 - 1.0 / lam_um**2)
-        + 17455.7 / (39.32957 - 1.0 / lam_um**2)
-    ) * 1e-8
-
-    n = 1.0 + n_minus1
-
-    # King factor
-    Fk = 1.034 + 3.17e-4 / lam_um**2
-
-    # Loschmidt number [cm^-3]
-    Ns = 2.546899e19
-
-    sigma = (24 * np.pi**3) / (Ns**2) * kayser**4 * ((n**2 - 1) / (n**2 + 2)) ** 2 * Fk
-
-    return sigma / 1e4  # convert from cm^2 to m^2
-
-
 # %% Load RFMIP Profiles
-atm_ds = read_rfmip_profiles(site=None, expt=[0])
+atm_ds = read_rfmip_profiles(site=None, expt=None)
 flat_ds = atm_ds.stack(atm_points=("expt", "site", "layer"))
 
 
 # %% Instantiate a GasOptics
-gas_optics_dt = xr.open_datatree("../data/ff/test_3_sw.nc")
+gas_optics_dt = xr.open_datatree("../data/ff/gas_optics_DDQ_SW.nc")
 gas_optics = GasOptics.from_datatree(gas_optics_dt)
 
 # %% Compute tau and other related fields for RTE
@@ -162,12 +124,10 @@ rte_input = tau_da.sum(dim="species").to_dataset(
 )  # .rename_dims({"frequency": "gpt"})
 
 rte_input["tau_rayleigh"] = (
-    gas_optics_dt["DDQ"]["xsec_rayleigh"] * atm_ds["N_per_m2_dry"] #* 1e2
+    gas_optics_dt["DDQ"]["xsec_rayleigh"] * atm_ds["N_per_m2_dry"]  # * 1e2
 )
 rte_input["tau"] = rte_input["tau"] + rte_input["tau_rayleigh"]
-rte_input["ssa"] = rte_input["tau_rayleigh"] / (
-    rte_input["tau"]
-)
+rte_input["ssa"] = rte_input["tau_rayleigh"] / (rte_input["tau"])
 
 # rte_input["ssa"] = xr.zeros_like(rte_input["tau"])
 rte_input["g"] = xr.zeros_like(rte_input["tau"])
@@ -175,7 +135,9 @@ rte_input["g"] = xr.zeros_like(rte_input["tau"])
 
 rte_input["weights_hz"] = ("frequency", gas_optics_dt["DDQ"]["weights_hz"].values)
 
-rte_input["solar_spectral_irradiance"] = gas_optics_dt["DDQ"]["spectral_solar_irradiance"]
+rte_input["solar_spectral_irradiance"] = gas_optics_dt["DDQ"][
+    "spectral_solar_irradiance"
+]
 
 rte_input["mu0_solar"] = np.cos(np.radians(atm_ds["solar_zenith_angle"]))
 
