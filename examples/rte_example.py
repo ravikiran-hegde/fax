@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
 from pyrte_rrtmgp import rte
@@ -54,7 +55,7 @@ def aggregate_fluxes(fluxes, spectral_weights, band):
 
 def do_ddq_example(file_path, band):
     atm_ds = xr.open_dataset(file_path)
-    atm_ds = atm_ds.rename(rename_dict)
+    atm_ds = atm_ds.rename({k: v for k, v in rename_dict.items() if k in atm_ds})
     dp = np.abs(atm_ds["pressure_level"].diff(dim="level", label="lower")).rename(
         {"level": "layer"}
     )
@@ -122,7 +123,10 @@ def do_ddq_example(file_path, band):
         optical_props = optical_props.expand_dims({"gpt": 1}, axis=-1)
         optical_props["surface_emissivity"] = atm_ds["surface_emissivity"]
 
-    optical_props.attrs["top_at_1"] = True
+    # True if level 0 is toa.
+    optical_props.attrs["top_at_1"] = (
+        atm_ds["pressure_layer"].isel(layer=0) - atm_ds["pressure_layer"].isel(layer=-1)
+    )[0] < 0
 
     # Solve RTE
     fluxes = optical_props.rte.solve(add_to_input=False)
@@ -131,10 +135,10 @@ def do_ddq_example(file_path, band):
 
     if "profile_weight" in atm_ds:
         fluxes[f"global_{band}_surface_flux"] = (
-            fluxes[f"{band}_net_flux"].isel(level=-1) * atm_ds["profile_weight"]
+            fluxes[f"{band}_flux_net"].isel(level=-1) * atm_ds["profile_weight"]
         ).sum(dim="site")
         fluxes[f"global_{band}_toa_flux"] = (
-            fluxes[f"{band}_net_flux"].isel(level=0) * atm_ds["profile_weight"]
+            fluxes[f"{band}_flux_net"].isel(level=0) * atm_ds["profile_weight"]
         ).sum(dim="site")
 
     return fluxes
@@ -197,26 +201,36 @@ def do_rrtgmp_example(file_path, band):
 
 
 # %%
-ddq_fluxes_lw = do_ddq_example(example_files[2], "lw")
-ddq_fluxes_sw = do_ddq_example(example_files[2], "sw")
-ddq_fluxes = xr.merge([ddq_fluxes_lw, ddq_fluxes_sw], compat="equals")
+example = 1
+ddq_fluxes_lw = do_ddq_example(example_files[example], "lw")
+ddq_fluxes_sw = do_ddq_example(example_files[example], "sw")
+ddq_fluxes = xr.merge([ddq_fluxes_lw, ddq_fluxes_sw], compat="equals", join="outer")
 
-rrtmgp_fluxes_lw = do_rrtgmp_example(example_files[2], "lw")
-rrtmgp_fluxes_sw = do_rrtgmp_example(example_files[2], "sw")
-rrtmgp_fluxes = xr.merge([rrtmgp_fluxes_lw, rrtmgp_fluxes_sw], compat="equals")
+rrtmgp_fluxes_lw = do_rrtgmp_example(example_files[example], "lw")
+rrtmgp_fluxes_sw = do_rrtgmp_example(example_files[example], "sw")
+rrtmgp_fluxes = xr.merge(
+    [rrtmgp_fluxes_lw, rrtmgp_fluxes_sw], compat="equals", join="outer"
+)
 # %%
 
-atm_ds = xr.open_dataset(example_files[2])
+atm_ds = xr.open_dataset(example_files[example])
 
 # %%
-import matplotlib.pyplot as plt
 
-var = "sw_flux_net"
-level = -1
+toa_level = (
+    0
+    if atm_ds["pres_layer"].isel(layer=0, col=0)
+    < atm_ds["pres_layer"].isel(layer=-1, col=0)
+    else -1
+)
+var = "lw_flux_net"
+level = 0
 variant = 0
 toa_diff = (rrtmgp_fluxes[var] - ddq_fluxes[var]).sel(variant=variant, level=level)
 # plot only daytime sites
-site_mask = (rrtmgp_fluxes["sw_flux_down"].sel(variant=variant, level=0) > 0).squeeze()
+site_mask = (
+    rrtmgp_fluxes["sw_flux_down"].sel(variant=variant, level=toa_level) > 0
+).squeeze()
 toa_diff = toa_diff.where(site_mask, drop=True)
 
 fig, ax = plt.subplots(
@@ -242,7 +256,7 @@ ax[0].scatter(
 )
 ax[0].axhline(0, color="gray", linestyle="--", linewidth=1)
 ax[0].set_xlabel("Column")
-ax[0].set_ylabel(f"Difference in {var} " +  r"/ W m$^{-2}$")
+ax[0].set_ylabel(f"Difference in {var} " + r"/ W m$^{-2}$")
 ax[0].grid(alpha=0.5)
 
 ax[1].hist(
@@ -260,7 +274,7 @@ ax[1].grid(alpha=0.5)
 ax[1].tick_params(labelleft=False)  # y labels only on the left plot
 
 fig.suptitle(f"Flux Differences (RRTMG - DDQ), level = {level}, variant = {variant}")
-plt.tight_layout()
+# plt.tight_layout()
 plt.show()
 # %%
 rrtmgp_fluxes = rrtmgp_fluxes.sel(col=toa_diff.col.values.squeeze())
