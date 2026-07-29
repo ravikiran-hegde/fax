@@ -45,20 +45,27 @@ class SingleSpeciesModel(ABC):
         pressure_var: str = "pressure_layer",
         temperature_var: str = "temperature_layer",
     ) -> xr.DataArray:
-        xsec = xr.apply_ufunc(
-            self.cross_section,
-            atmosphere_ds[pressure_var],
-            atmosphere_ds[temperature_var],
-            atmosphere_ds[self.config.species],
-            # input_core_dims=[[], [], []],  # all are (levels,)
-            output_core_dims=[
-                [
-                    "frequency",
-                ]
-            ],  # output adds frequency dim
-            dask="parallelized",  # works with dask arrays too
-            output_dtypes=[float],
-        )
+        # only compute cross-section if species present in atmosphere_ds
+        if self.config.species not in atmosphere_ds.variables:
+            xsec = xr.zeros_like(atmosphere_ds[pressure_var]).expand_dims(
+                frequency=self.config.frequency_grid, axis=-1
+            )
+            # TODO: warning
+        else:
+            xsec = xr.apply_ufunc(
+                self.cross_section,
+                atmosphere_ds[pressure_var],
+                atmosphere_ds[temperature_var],
+                atmosphere_ds[self.config.species],
+                # input_core_dims=[[], [], []],  # all are (levels,)
+                output_core_dims=[
+                    [
+                        "frequency",
+                    ]
+                ],  # output adds frequency dim
+                dask="parallelized",
+                output_dtypes=[float],
+            )
         return xsec.assign_coords(frequency=self.config.frequency_grid).expand_dims(
             species=[str(self.config.species)], axis=0
         )
@@ -137,3 +144,23 @@ class SavableModel(ABC):
         with open(config_path, "r") as f:
             config_dict = json.load(f)
         self.config = self.config.__class__(**config_dict)
+
+
+class NullAbsorberModel(SingleSpeciesModel):
+    """A null absorber model that returns zero cross-sections."""
+
+    def __init__(self, name: str = "", frequency_grid: ARRAYLIKE = (1012.2305,)):
+        config = AbsorberConfig(species=name, frequency_grid=frequency_grid)
+        super().__init__(config)
+
+    def cross_section(
+        self,
+        pressure: np.ndarray,
+        temperature: np.ndarray,
+        vmr: np.ndarray,
+    ) -> np.ndarray:
+        return np.zeros((len(pressure), len(self.config.frequency_grid)))
+
+    @property
+    def class_name(self) -> str:
+        return "NullAbsorberModel"

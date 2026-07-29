@@ -4,7 +4,7 @@ from typing import Dict, Tuple, Type
 import numpy as np
 import xarray as xr
 
-from model.abstract_class import SavableModel, SingleSpeciesModel
+from model.abstract_class import ARRAYLIKE, SavableModel, SingleSpeciesModel
 from model.constants import BOLTZMANN
 from model.continuum import H2OContinuum
 from model.functional import FunctionalAbsorber
@@ -16,7 +16,7 @@ class GasOpticsConfig:
     """Configuration for the gas optics model."""
 
     species: Tuple[str, ...]  # e.g., ("H2O", "CO2", "O3")
-    frequency_grid: tuple[float, ...]
+    frequency_grid: ARRAYLIKE
 
 
 class GasOptics:
@@ -25,7 +25,7 @@ class GasOptics:
     def __init__(
         self,
         species: Tuple[str, ...],
-        frequency_grid: tuple[float, ...] = (1012.2305,),
+        frequency_grid: ARRAYLIKE = (1012.2305,),
     ) -> None:
 
         self.config = GasOpticsConfig(species=species, frequency_grid=frequency_grid)
@@ -172,7 +172,8 @@ class GasOptics:
     ) -> xr.DataArray:
         """Calculate cross-section for each species and frequency."""
         xsec_list = []
-        for absorber in self._absorbers.values():
+        active_absorbers = self.active_absorbers(atmosphere_ds)
+        for absorber in active_absorbers.values():
             xsec = absorber.cross_section_from_atmds(
                 atmosphere_ds,
                 pressure_var=pressure_var,
@@ -182,7 +183,7 @@ class GasOptics:
 
         xsec_total = xr.concat(xsec_list, dim="species")
 
-        return xsec_total.assign_coords(species=list(self._absorbers.keys()))
+        return xsec_total.assign_coords(species=list(active_absorbers.keys()))
 
     def absorption_from_ds(
         self,
@@ -195,7 +196,8 @@ class GasOptics:
             BOLTZMANN * atmosphere_ds[temperature_var]
         )
         abs_list = []
-        for absorber in self._absorbers.values():
+        active_absorbers = self.active_absorbers(atmosphere_ds)
+        for absorber in active_absorbers.values():
             xsec = absorber.cross_section_from_atmds(
                 atmosphere_ds,
                 pressure_var=pressure_var,
@@ -204,9 +206,8 @@ class GasOptics:
 
             abs_coef = xsec * atmosphere_ds[absorber.config.species] * n_total
             abs_list.append(abs_coef)
-
         abs_coef_all = xr.concat(abs_list, dim="species").assign_coords(
-            species=list(self._absorbers.keys())
+            species=list(active_absorbers.keys())
         )
 
         return xr.DataArray(
@@ -225,7 +226,8 @@ class GasOptics:
         """Calculate optical depth for each species and frequency."""
 
         tau_list = []
-        for absorber in self._absorbers.values():
+        active_absorbers = self.active_absorbers(atmosphere_ds)
+        for absorber in active_absorbers.values():
             xsec = absorber.cross_section_from_atmds(
                 atmosphere_ds,
                 pressure_var=pressure_var,
@@ -240,7 +242,7 @@ class GasOptics:
             tau_list.append(tau)
 
         tau_all = xr.concat(tau_list, dim="species").assign_coords(
-            species=list(self._absorbers.keys())
+            species=list(active_absorbers.keys())
         )
 
         return xr.DataArray(
@@ -279,6 +281,16 @@ class GasOptics:
         return tuple(
             set(absorber.config.species for absorber in self._absorbers.values())
         )
+
+    def active_absorbers(
+        self, atmosphere_ds: xr.Dataset
+    ) -> dict[str, SingleSpeciesModel]:
+        """Return the absorbers that are present in the atmosphere dataset."""
+        return {
+            name: absorber
+            for name, absorber in self._absorbers.items()
+            if absorber.config.species in atmosphere_ds.variables
+        }
 
 
 absorber_registry: Dict[str, Type[SavableModel]] = {
