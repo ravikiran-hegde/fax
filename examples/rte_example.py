@@ -41,15 +41,15 @@ rename_dict = {
 
 def aggregate_fluxes(fluxes, spectral_weights, band):
     band = band.lower()
-    fluxes[f"{band}_net_flux_up"] = (fluxes[f"{band}_flux_up"] * spectral_weights).sum(
-        dim="frequency"
-    )
-    fluxes[f"{band}_net_flux_down"] = (
-        fluxes[f"{band}_flux_down"] * spectral_weights
+    fluxes[f"{band}_spectral_flux_up"] = fluxes[f"{band}_flux_up"]
+    fluxes[f"{band}_spectral_flux_down"] = fluxes[f"{band}_flux_down"]
+    fluxes[f"{band}_flux_up"] = (
+        fluxes[f"{band}_spectral_flux_up"] * spectral_weights
     ).sum(dim="frequency")
-    fluxes[f"{band}_net_flux"] = (
-        fluxes[f"{band}_net_flux_down"] - fluxes[f"{band}_net_flux_up"]
-    )
+    fluxes[f"{band}_flux_down"] = (
+        fluxes[f"{band}_spectral_flux_down"] * spectral_weights
+    ).sum(dim="frequency")
+    fluxes[f"{band}_flux_net"] = fluxes[f"{band}_flux_down"] - fluxes[f"{band}_flux_up"]
 
 
 def do_ddq_example(file_path, band):
@@ -73,7 +73,7 @@ def do_ddq_example(file_path, band):
         .sum(dim="species")
         .to_dataset(name="tau")
     )
-    
+
     # Additional band specific properties
     if band == "sw":
         optical_props["tau_rayleigh"] = (
@@ -183,38 +183,40 @@ def do_rrtgmp_example(file_path, band):
     fluxes = optical_props.rte.solve(
         add_to_input=False,
     )
-    fluxes[f"{band}_net_flux"] = fluxes[f"{band}_flux_down"] - fluxes[f"{band}_flux_up"]
+    fluxes[f"{band}_flux_net"] = fluxes[f"{band}_flux_down"] - fluxes[f"{band}_flux_up"]
 
     if "profile_weight" in atm_ds:
         fluxes[f"global_{band}_surface_flux"] = (
-            fluxes[f"{band}_net_flux"].isel(level=-1) * atm_ds["profile_weight"]
+            fluxes[f"{band}_flux_net"].isel(level=-1) * atm_ds["profile_weight"]
         ).sum(dim="site")
         fluxes[f"global_{band}_toa_flux"] = (
-            fluxes[f"{band}_net_flux"].isel(level=0) * atm_ds["profile_weight"]
+            fluxes[f"{band}_flux_net"].isel(level=0) * atm_ds["profile_weight"]
         ).sum(dim="site")
 
     return fluxes
 
 
 # %%
-ddq_fluxes_lw = do_ddq_example(example_files[0], "lw")
-ddq_fluxes_sw = do_ddq_example(example_files[0], "sw")
+ddq_fluxes_lw = do_ddq_example(example_files[2], "lw")
+ddq_fluxes_sw = do_ddq_example(example_files[2], "sw")
 ddq_fluxes = xr.merge([ddq_fluxes_lw, ddq_fluxes_sw], compat="equals")
 
-rrtmgp_fluxes_lw = do_rrtgmp_example(example_files[0], "lw")
-rrtmgp_fluxes_sw = do_rrtgmp_example(example_files[0], "sw")
+rrtmgp_fluxes_lw = do_rrtgmp_example(example_files[2], "lw")
+rrtmgp_fluxes_sw = do_rrtgmp_example(example_files[2], "sw")
 rrtmgp_fluxes = xr.merge([rrtmgp_fluxes_lw, rrtmgp_fluxes_sw], compat="equals")
 # %%
 
-atm_ds = xr.open_dataset(example_files[0])
+atm_ds = xr.open_dataset(example_files[2])
 
 # %%
 import matplotlib.pyplot as plt
 
-var = 'sw_net_flux'
-toa_diff = (rrtmgp_fluxes[var] - ddq_fluxes[var]).sel(variant=0, level=0)
+var = "sw_flux_net"
+level = -1
+variant = 0
+toa_diff = (rrtmgp_fluxes[var] - ddq_fluxes[var]).sel(variant=variant, level=level)
 # plot only daytime sites
-site_mask = (rrtmgp_fluxes["sw_flux_down"].sel(variant=0, level=0) > 10).squeeze()
+site_mask = (rrtmgp_fluxes["sw_flux_down"].sel(variant=variant, level=0) > 0).squeeze()
 toa_diff = toa_diff.where(site_mask, drop=True)
 
 fig, ax = plt.subplots(
@@ -239,8 +241,8 @@ ax[0].scatter(
     linewidth=0.3,
 )
 ax[0].axhline(0, color="gray", linestyle="--", linewidth=1)
-ax[0].set_xlabel("Site")
-ax[0].set_ylabel("Difference in TOA flux (W/m^2)")
+ax[0].set_xlabel("Column")
+ax[0].set_ylabel(f"Difference in {var} " +  r"/ W m$^{-2}$")
 ax[0].grid(alpha=0.5)
 
 ax[1].hist(
@@ -257,21 +259,23 @@ ax[1].set_xlabel("Count")
 ax[1].grid(alpha=0.5)
 ax[1].tick_params(labelleft=False)  # y labels only on the left plot
 
-fig.suptitle("TOA Flux Differences (RRTMG - DDQ)")
+fig.suptitle(f"Flux Differences (RRTMG - DDQ), level = {level}, variant = {variant}")
 plt.tight_layout()
 plt.show()
 # %%
-rrtmgp_fluxes = rrtmgp_fluxes.sel(site=toa_diff.site.values.squeeze())
-ddq_fluxes = ddq_fluxes.sel(site=toa_diff.site.values.squeeze())
+rrtmgp_fluxes = rrtmgp_fluxes.sel(col=toa_diff.col.values.squeeze())
+ddq_fluxes = ddq_fluxes.sel(col=toa_diff.col.values.squeeze())
+# only for rfmip
+#
 print(
-    "Global daytime TOA flux difference (RRTMG - DDQ):",
+    f"Global daytime {var} difference (RRTMG - DDQ):",
     (
         (rrtmgp_fluxes[var] - ddq_fluxes[var]).sel(
-            level=0,
+            level=level,
         )
         * atm_ds["profile_weight"].sel(col=toa_diff.col.values.squeeze())
     )
-    .sum(dim="site")
+    .sum(dim="col")
     .values,
 )
 
