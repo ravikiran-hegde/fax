@@ -3,7 +3,6 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
 from pyrte_rrtmgp import rte
@@ -12,11 +11,11 @@ from model.constants import GRAVITY, MEAN_MASS_AIR
 from model.gas_optics import GasOptics
 from model.utils import planck_nu
 
-rte
+rte  # so that autoformatters don't remove the import
 
 
 # %%
-example_dir = "/Users/rk/Work/rte-examples/"
+example_dir = "/Users/rk/Work/rte-rrtmgp/build/rte-examples-data/"  # "/Users/rk/Work/rte-examples/"
 example_files = [
     example_dir + file
     for file in ["ckdmip-states.nc", "rce-states.nc", "rfmip-states.nc"]
@@ -51,6 +50,12 @@ def aggregate_fluxes(fluxes, spectral_weights, band):
         fluxes[f"{band}_spectral_flux_down"] * spectral_weights
     ).sum(dim="frequency")
     fluxes[f"{band}_flux_net"] = fluxes[f"{band}_flux_down"] - fluxes[f"{band}_flux_up"]
+
+
+def add_net_flux(fluxes):
+    fluxes["flux_net"] = fluxes["lw_flux_net"] + fluxes["sw_flux_net"]
+    fluxes["flux_up"] = fluxes["lw_flux_up"] + fluxes["sw_flux_up"]
+    fluxes["flux_down"] = fluxes["lw_flux_down"] + fluxes["sw_flux_down"]
 
 
 def do_ddq_example(file_path, band):
@@ -156,10 +161,10 @@ def do_rrtgmp_example(file_path, band):
     if band == "lw":
         rrtmgp_optics = R_GasOptics(gas_optics_file=GasOpticsFiles.LW_G256)
 
-        # atm_ds["pres_level"] = xr.ufuncs.maximum(
-        #     rrtmgp_optics.press_min,
-        #     atm_ds["pres_level"],
-        # )
+        atm_ds["pres_level"] = xr.ufuncs.maximum(
+            rrtmgp_optics.press_min,
+            atm_ds["pres_level"],
+        )
         optical_props = rrtmgp_optics.compute(
             atm_ds,
             add_to_input=False,
@@ -168,10 +173,10 @@ def do_rrtgmp_example(file_path, band):
 
     elif band == "sw":
         rrtmgp_optics = R_GasOptics(gas_optics_file=GasOpticsFiles.SW_G224)
-        # atm_ds["pres_level"] = xr.ufuncs.maximum(
-        #     rrtmgp_optics.press_min,
-        #     atm_ds["pres_level"],
-        # )
+        atm_ds["pres_level"] = xr.ufuncs.maximum(
+            rrtmgp_optics.press_min,
+            atm_ds["pres_level"],
+        )
         optical_props = rrtmgp_optics.compute(
             atm_ds,
             add_to_input=False,
@@ -200,97 +205,27 @@ def do_rrtgmp_example(file_path, band):
     return fluxes
 
 
-# %%
-example = 1
-ddq_fluxes_lw = do_ddq_example(example_files[example], "lw")
-ddq_fluxes_sw = do_ddq_example(example_files[example], "sw")
-ddq_fluxes = xr.merge([ddq_fluxes_lw, ddq_fluxes_sw], compat="equals", join="outer")
+# %% Run and save all examples
+for example in range(len(example_files)):
+    ddq_fluxes_lw = do_ddq_example(example_files[example], "lw")
+    ddq_fluxes_sw = do_ddq_example(example_files[example], "sw")
+    ddq_fluxes = xr.merge([ddq_fluxes_lw, ddq_fluxes_sw], compat="equals", join="outer")
 
-rrtmgp_fluxes_lw = do_rrtgmp_example(example_files[example], "lw")
-rrtmgp_fluxes_sw = do_rrtgmp_example(example_files[example], "sw")
-rrtmgp_fluxes = xr.merge(
-    [rrtmgp_fluxes_lw, rrtmgp_fluxes_sw], compat="equals", join="outer"
-)
-# %%
+    add_net_flux(ddq_fluxes)
 
-atm_ds = xr.open_dataset(example_files[example])
-
-# %%
-
-toa_level = (
-    0
-    if atm_ds["pres_layer"].isel(layer=0, col=0)
-    < atm_ds["pres_layer"].isel(layer=-1, col=0)
-    else -1
-)
-var = "lw_flux_net"
-level = 0
-variant = 0
-toa_diff = (rrtmgp_fluxes[var] - ddq_fluxes[var]).sel(variant=variant, level=level)
-# plot only daytime sites
-site_mask = (
-    rrtmgp_fluxes["sw_flux_down"].sel(variant=variant, level=toa_level) > 0
-).squeeze()
-toa_diff = toa_diff.where(site_mask, drop=True)
-
-fig, ax = plt.subplots(
-    1,
-    2,
-    figsize=(10, 5),
-    sharey=True,
-    gridspec_kw={"width_ratios": [4, 1], "wspace": 0.05},
-)
-
-scatter_sizes = (
-    1000 * atm_ds["profile_weight"].sel(col=toa_diff.col).values
-    if "profile_weight" in atm_ds
-    else 10 * np.ones_like(toa_diff.col.values)
-)
-ax[0].scatter(
-    toa_diff.col.values,
-    toa_diff.values,
-    s=scatter_sizes,
-    # alpha=0.7,
-    edgecolor="k",
-    linewidth=0.3,
-)
-ax[0].axhline(0, color="gray", linestyle="--", linewidth=1)
-ax[0].set_xlabel("Column")
-ax[0].set_ylabel(f"Difference in {var} " + r"/ W m$^{-2}$")
-ax[0].grid(alpha=0.5)
-
-ax[1].hist(
-    toa_diff.values,
-    bins=30,
-    orientation="horizontal",
-    color="steelblue",
-    # alpha=0.7,
-    edgecolor="k",
-    linewidth=0.3,
-)
-ax[1].axhline(0, color="gray", linestyle="--", linewidth=1)
-ax[1].set_xlabel("Count")
-ax[1].grid(alpha=0.5)
-ax[1].tick_params(labelleft=False)  # y labels only on the left plot
-
-fig.suptitle(f"Flux Differences (RRTMG - DDQ), level = {level}, variant = {variant}")
-# plt.tight_layout()
-plt.show()
-# %%
-rrtmgp_fluxes = rrtmgp_fluxes.sel(col=toa_diff.col.values.squeeze())
-ddq_fluxes = ddq_fluxes.sel(col=toa_diff.col.values.squeeze())
-# only for rfmip
-#
-print(
-    f"Global daytime {var} difference (RRTMG - DDQ):",
-    (
-        (rrtmgp_fluxes[var] - ddq_fluxes[var]).sel(
-            level=level,
-        )
-        * atm_ds["profile_weight"].sel(col=toa_diff.col.values.squeeze())
+    ddq_fluxes.to_netcdf(
+        f"../data/rte_examples/pyddq_fluxes_{example_files[example].split('/')[-1].split('-')[0]}.nc"
     )
-    .sum(dim="col")
-    .values,
-)
+
+for example in range(len(example_files)):
+    rrtmgp_fluxes_lw = do_rrtgmp_example(example_files[example], "lw")
+    rrtmgp_fluxes_sw = do_rrtgmp_example(example_files[example], "sw")
+    rrtmgp_fluxes = xr.merge(
+        [rrtmgp_fluxes_lw, rrtmgp_fluxes_sw], compat="equals", join="outer"
+    )
+    add_net_flux(rrtmgp_fluxes)
+    rrtmgp_fluxes.to_netcdf(
+        f"../data/rte_examples/pyrrtmgp__fluxes_{example_files[example].split('/')[-1].split('-')[0]}.nc"
+    )
 
 # %%
