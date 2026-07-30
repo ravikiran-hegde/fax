@@ -97,9 +97,8 @@ def do_ddq_example(file_path, band):
         optical_props = optical_props.expand_dims({"gpt": 1}, axis=-1)
         optical_props["surface_albedo"] = atm_ds["surface_albedo"]
         optical_props["solar_zenith_angle"] = atm_ds["solar_zenith_angle"]
-
+        optical_props["total_solar_irradiance"] = atm_ds["total_solar_irradiance"]
     if band == "lw":
-        optical_props["surface_emissivity"] = atm_ds["surface_emissivity"]
 
         optical_props["layer_source"] = xr.apply_ufunc(
             planck_nu,
@@ -161,10 +160,10 @@ def do_rrtgmp_example(file_path, band):
     if band == "lw":
         rrtmgp_optics = R_GasOptics(gas_optics_file=GasOpticsFiles.LW_G256)
 
-        atm_ds["pres_level"] = xr.ufuncs.maximum(
-            rrtmgp_optics.press_min,
-            atm_ds["pres_level"],
-        )
+        # atm_ds["pres_level"] = xr.ufuncs.maximum(
+        #     rrtmgp_optics.press_min,
+        #     atm_ds["pres_level"],
+        # )
         optical_props = rrtmgp_optics.compute(
             atm_ds,
             add_to_input=False,
@@ -173,10 +172,10 @@ def do_rrtgmp_example(file_path, band):
 
     elif band == "sw":
         rrtmgp_optics = R_GasOptics(gas_optics_file=GasOpticsFiles.SW_G224)
-        atm_ds["pres_level"] = xr.ufuncs.maximum(
-            rrtmgp_optics.press_min,
-            atm_ds["pres_level"],
-        )
+        # atm_ds["pres_level"] = xr.ufuncs.maximum(
+        #     rrtmgp_optics.press_min,
+        #     atm_ds["pres_level"],
+        # )
         optical_props = rrtmgp_optics.compute(
             atm_ds,
             add_to_input=False,
