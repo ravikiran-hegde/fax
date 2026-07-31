@@ -5,6 +5,7 @@ from pathlib import Path
 import xarray as xr
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from model.constants import CM_TO_M, LIGHT_SPEED
 from model.utils import hz_to_kayser
 
 
@@ -212,8 +213,7 @@ VARIABLE_ATTRS = {
 # =============================================================================
 # %%Longwave
 # =============================================================================
-
-data_lw = xr.open_datatree("../data/ff/test_3_lw.nc").copy()
+data_lw = xr.open_datatree("../data/ff/gas_optics_DDQ_LW.nc").copy()
 # ---- Hinge rational ---------------------------------------------------------
 
 lines = data_lw["Hinge_Rational"].to_dataset().rename(LINE_RENAME)
@@ -309,7 +309,7 @@ gas_optics_lw.to_netcdf("../../ddq-data/gas_optics_lw.nc")
 # %% Shortwave
 # =============================================================================
 
-data_sw = xr.open_datatree("../data/ff/test_3_sw.nc").copy()
+data_sw = xr.open_datatree("../data/ff/gas_optics_DDQ_SW.nc").copy()
 
 # ---- Hinge rational ---------------------------------------------------------
 
@@ -373,7 +373,7 @@ gas_optics_sw["weights"] = (
 
 gas_optics_sw["solar_spectral_irradiance"] = (
     "nu",
-    data_sw["DDQ"]["spectral_solar_irradiance"].values,  # * LIGHT_SPEED * CM_TO_M,
+    data_sw["DDQ"]["spectral_solar_irradiance"].values * LIGHT_SPEED * CM_TO_M,
 )
 gas_optics_sw["rayleigh_xsec"] = (
     "nu",
