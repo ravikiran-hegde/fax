@@ -7,7 +7,7 @@ import numpy as np
 import xarray as xr
 from pyrte_rrtmgp import rte
 
-from model.constants import GRAVITY, MEAN_MASS_AIR
+from model.constants import AVOGADRO, GRAVITY, MEAN_MOLAR_MASS_AIR, MEAN_MOLAR_MASS_H2O
 from model.gas_optics import GasOptics
 from model.utils import planck_nu
 
@@ -39,16 +39,14 @@ rename_dict = {
 }
 
 
-def aggregate_fluxes(fluxes, spectral_weights, band):
+def aggregate_fluxes(fluxes, band):
     band = band.lower()
+
     fluxes[f"{band}_spectral_flux_up"] = fluxes[f"{band}_flux_up"]
     fluxes[f"{band}_spectral_flux_down"] = fluxes[f"{band}_flux_down"]
-    fluxes[f"{band}_flux_up"] = (
-        fluxes[f"{band}_spectral_flux_up"] * spectral_weights
-    ).sum(dim="frequency")
-    fluxes[f"{band}_flux_down"] = (
-        fluxes[f"{band}_spectral_flux_down"] * spectral_weights
-    ).sum(dim="frequency")
+
+    fluxes[f"{band}_flux_up"] = fluxes[f"{band}_spectral_flux_up"].sum("frequency")
+    fluxes[f"{band}_flux_down"] = fluxes[f"{band}_spectral_flux_down"].sum("frequency")
     fluxes[f"{band}_flux_net"] = fluxes[f"{band}_flux_down"] - fluxes[f"{band}_flux_up"]
 
 
@@ -61,11 +59,13 @@ def add_net_flux(fluxes):
 def do_ddq_example(file_path, band):
     atm_ds = xr.open_dataset(file_path)
     atm_ds = atm_ds.rename({k: v for k, v in rename_dict.items() if k in atm_ds})
+
     dp = np.abs(atm_ds["pressure_level"].diff(dim="level", label="lower")).rename(
         {"level": "layer"}
     )
-    dry_vmr = 1.0 / (1.0 + atm_ds["H2O"]) if "H2O" in atm_ds else 1.0
-    atm_ds["N_per_m2_dry"] = dp * dry_vmr / (GRAVITY * MEAN_MASS_AIR)
+    vmr_h2o = atm_ds["H2O"] if "H2O" in atm_ds else xr.zeros_like(dp)
+    m_air = (MEAN_MOLAR_MASS_AIR + MEAN_MOLAR_MASS_H2O * vmr_h2o) / (1.0 + vmr_h2o)
+    atm_ds["N_per_m2_dry"] = dp / GRAVITY * AVOGADRO / (m_air * (1.0 + vmr_h2o))
 
     flat_ds = atm_ds.stack(atm_points=("variant", "col", "layer"))
 
@@ -91,8 +91,10 @@ def do_ddq_example(file_path, band):
 
         ssi = gas_optics_dt["DDQ"]["spectral_solar_irradiance"]
         weights = gas_optics_dt["DDQ"]["weights_hz"]
-        optical_props["toa_source"] = ssi * (
-            atm_ds["total_solar_irradiance"] / (ssi * weights).sum(dim="frequency")
+        optical_props["toa_source"] = (
+            ssi
+            * (atm_ds["total_solar_irradiance"] / (ssi * weights).sum(dim="frequency"))
+            * weights
         )
         optical_props = optical_props.expand_dims({"gpt": 1}, axis=-1)
         optical_props["surface_albedo"] = atm_ds["surface_albedo"]
@@ -100,25 +102,36 @@ def do_ddq_example(file_path, band):
         optical_props["total_solar_irradiance"] = atm_ds["total_solar_irradiance"]
     if band == "lw":
 
-        optical_props["layer_source"] = xr.apply_ufunc(
-            planck_nu,
-            optical_props["frequency"],
-            atm_ds["temperature_layer"],
-            vectorize=True,
+        weights = gas_optics_dt["DDQ"]["weights_hz"]
+
+        optical_props["layer_source"] = (
+            xr.apply_ufunc(
+                planck_nu,
+                optical_props["frequency"],
+                atm_ds["temperature_layer"],
+                vectorize=True,
+            )
+            * weights
         )
 
-        optical_props["level_source"] = xr.apply_ufunc(
-            planck_nu,
-            optical_props["frequency"],
-            atm_ds["temperature_level"],
-            vectorize=True,
+        optical_props["level_source"] = (
+            xr.apply_ufunc(
+                planck_nu,
+                optical_props["frequency"],
+                atm_ds["temperature_level"],
+                vectorize=True,
+            )
+            * weights
         )
 
-        optical_props["surface_source"] = xr.apply_ufunc(
-            planck_nu,
-            optical_props["frequency"],
-            atm_ds["surface_temperature"],
-            vectorize=True,
+        optical_props["surface_source"] = (
+            xr.apply_ufunc(
+                planck_nu,
+                optical_props["frequency"],
+                atm_ds["surface_temperature"],
+                vectorize=True,
+            )
+            * weights
         )
         optical_props["surface_source_jacobian"] = xr.zeros_like(
             optical_props["surface_source"]
@@ -135,7 +148,7 @@ def do_ddq_example(file_path, band):
     # Solve RTE
     fluxes = optical_props.rte.solve(add_to_input=False)
 
-    aggregate_fluxes(fluxes, gas_optics_dt["DDQ"]["weights_hz"], band)
+    aggregate_fluxes(fluxes, band)
 
     if "profile_weight" in atm_ds:
         fluxes[f"global_{band}_surface_flux"] = (
@@ -216,15 +229,15 @@ for example in range(len(example_files)):
         f"../data/rte_examples/pyddq_fluxes_{example_files[example].split('/')[-1].split('-')[0]}.nc"
     )
 
-for example in range(len(example_files)):
-    rrtmgp_fluxes_lw = do_rrtgmp_example(example_files[example], "lw")
-    rrtmgp_fluxes_sw = do_rrtgmp_example(example_files[example], "sw")
-    rrtmgp_fluxes = xr.merge(
-        [rrtmgp_fluxes_lw, rrtmgp_fluxes_sw], compat="equals", join="outer"
-    )
-    add_net_flux(rrtmgp_fluxes)
-    rrtmgp_fluxes.to_netcdf(
-        f"../data/rte_examples/pyrrtmgp__fluxes_{example_files[example].split('/')[-1].split('-')[0]}.nc"
-    )
+# for example in range(len(example_files)):
+#     rrtmgp_fluxes_lw = do_rrtgmp_example(example_files[example], "lw")
+#     rrtmgp_fluxes_sw = do_rrtgmp_example(example_files[example], "sw")
+#     rrtmgp_fluxes = xr.merge(
+#         [rrtmgp_fluxes_lw, rrtmgp_fluxes_sw], compat="equals", join="outer"
+#     )
+#     add_net_flux(rrtmgp_fluxes)
+#     rrtmgp_fluxes.to_netcdf(
+#         f"../data/rte_examples/pyrrtmgp_fluxes_{example_files[example].split('/')[-1].split('-')[0]}.nc"
+#     )
 
 # %%

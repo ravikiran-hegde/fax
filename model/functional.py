@@ -23,7 +23,8 @@ def lnp(p, ref_pressure, **_ignored):
 
 def lnp_withself(p, ref_pressure, vmr, ref_vmr, self_scaling):
     return np.log(
-        (p / ref_pressure) * (1.0 + vmr * self_scaling) / (1.0 + ref_vmr * self_scaling)
+        (p / ref_pressure)
+        * (1.0 + vmr * self_scaling)  # / (1.0 + ref_vmr * self_scaling)
     )
 
 
