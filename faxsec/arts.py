@@ -14,8 +14,7 @@ import numpy as np
 import pyarts3 as pyarts
 
 from faxsec.abstract_class import ARRAYLIKE, AbsorberConfig, SingleSpeciesModel
-
-from .constants import EPS, REF_VMR
+from faxsec.constants import DEFAULT_VMR, EPS, REF_VMR
 
 LINE_CUTOFF_HZ = 750e9
 PYARTS_VERSION = "3.0.0dev8"
@@ -99,11 +98,11 @@ class ARTSAbsorber(SingleSpeciesModel):
         S = len(self.config.arts_tag)
         xsec_stack = np.zeros((N, F))
         default_vmrs = {
-            "N2": 0.7808,
-            "O2": 0.2095,
-            "CO2": 4.2e-4,
-            "H2O": 0.001,
-            "CH4": 1.9e-6,
+            "N2": DEFAULT_VMR.get("N2"),
+            "O2": DEFAULT_VMR.get("O2"),
+            "CO2": DEFAULT_VMR.get("CO2"),
+            "H2O": DEFAULT_VMR.get("H2O"),
+            "CH4": DEFAULT_VMR.get("CH4"),
         }
         atm = pyarts.arts.AtmPoint()
         for i in range(N):

@@ -155,20 +155,22 @@ def compute_xsec(ds, p, T):
 from faxsec.arts import ARTSAbsorber
 from faxsec.xfit import CrossFitAbsorber
 
-lw_ddq_loc = "../data/ddq/DDQ_LW.h5"
+lw_ddq_loc = "../../data/ddq/DDQ_LW.h5"
 kayser_quadrature_lw = xr.load_dataset(lw_ddq_loc)
 
-sw_ddq_loc = "../data/ddq/DDQ_SW.h5"
+sw_ddq_loc = "../../data/ddq/DDQ_SW.h5"
 kayser_quadrature_sw = xr.load_dataset(sw_ddq_loc)
+
+kayser_quadrature = xr.concat(
+    [kayser_quadrature_lw, kayser_quadrature_sw], dim="S"
+).sortby("S")
+frequency_grid = kayser_to_hz(kayser_quadrature["S"].values)
 # %%
 
-from __future__ import annotations
-
-from pathlib import Path
-
+halocarbon_absorber = CrossFitAbsorber(
     species=species,
     frequency_grid=frequency_grid,
-    data_source=f"../data/halocarbon/{species}-XFIT.xml",
+    data_source=f"../../data/halocarbon/{species}-XFIT.xml",
 )
 
 

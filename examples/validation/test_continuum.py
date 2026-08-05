@@ -2,10 +2,11 @@
 
 import xarray as xr
 
+from faxsec.constants import DEFAULT_VMR
 from faxsec.continuum import H2OContinuum
-from faxsec.utils import kayser_to_hz
+from faxsec.utils import kayser_to_hz, simple_vmr_profile
 
-lw_ddq_loc = "../data/ddq/DDQ_LW.h5"
+lw_ddq_loc = "../../data/ddq/DDQ_LW.h5"
 kayser_quadrature_lw = xr.load_dataset(lw_ddq_loc)
 
 kayser_quadrature = kayser_quadrature_lw
@@ -20,7 +21,7 @@ arts_absorbers = {}
 
 h2o_cont = H2OContinuum(
     frequency_grid=frequency_grid,
-    data_source="../data/continuum/absco-ref_wv-mt-ckd400.nc",
+    data_source="../../data/continuum/absco-ref_wv-mt-ckd400.nc",
 )
 absorbers["H2O_continuum"] = h2o_cont
 
@@ -41,17 +42,10 @@ from pyarts3.recipe import SingleSpeciesAbsorption
 pyarts3.data.download(version=PYARTS_VERSION)
 
 cont = SingleSpeciesAbsorption(species="H2O-ForeignContCKDMT400, H2O-SelfContCKDMT400")
-default_vmrs = {
-    "N2": 0.7808,
-    "O2": 0.2095,
-    "CO2": 4.2e-4,
-    "H2O": 6.29e-6,
-    "CH4": 1.9e-6,
-}
 
 atm = pyarts3.arts.AtmPoint()
-for sp in default_vmrs:
-    atm[sp] = default_vmrs[sp]
+for sp in DEFAULT_VMR:
+    atm[sp] = DEFAULT_VMR[sp]
 
 
 # %%
@@ -64,35 +58,6 @@ t = np.array([150, 273, 300])
 
 p = [10]
 t = [230.8]
-
-
-def simple_vmr_profile(
-    species: str, pressure: np.ndarray, temperature: np.ndarray
-) -> np.ndarray:
-    """Return a simple level-wise VMR profile for one species."""
-    pressure = np.asarray(pressure, dtype=float)
-    temperature = np.asarray(temperature, dtype=float)
-
-    if "H2O" in species:
-        vmr = np.full_like(pressure, 6.29e-6, dtype=float)
-    elif species == "CO2":
-        vmr = np.full_like(pressure, 4.2e-4, dtype=float)
-    elif species == "O2":
-        vmr = np.full_like(pressure, 0.2095, dtype=float)
-    elif species == "CH4":
-        vmr = np.full_like(pressure, 1.9e-6, dtype=float)
-    elif species == "N2O":
-        vmr = np.full_like(pressure, 3.3e-7, dtype=float)
-    elif species == "N2":
-        vmr = np.full_like(pressure, 0.7808, dtype=float)
-    elif species == "CFC11":
-        vmr = np.full_like(pressure, 2.5e-10, dtype=float)
-    elif species == "CFC12":
-        vmr = np.full_like(pressure, 5.0e-10, dtype=float)
-    else:
-        vmr = np.full_like(pressure, 1e-9, dtype=float)
-
-    return vmr
 
 
 species_order = list(absorbers.keys())

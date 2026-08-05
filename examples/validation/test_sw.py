@@ -4,61 +4,23 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
-from faxsec.utils import ensure_reference_dataset, kayser_to_hz, reference_cache_path
+from faxsec.utils import (
+    ensure_reference_dataset,
+    kayser_to_hz,
+    reference_cache_path,
+    simple_vmr_profile,
+)
 
-lw_ddq_loc = "../data/ddq/DDQ_LW.h5"
-kayser_quadrature_lw = xr.load_dataset(lw_ddq_loc)
+sw_ddq_loc = "../../data/ddq/DDQ_SW.h5"
+kayser_quadrature_sw = xr.load_dataset(sw_ddq_loc)
 
-kayser_quadrature = kayser_quadrature_lw
+# kayser_quadrature = xr.concat([kayser_quadrature_lw, kayser_quadrature_sw], dim="S")
+kayser_quadrature = kayser_quadrature_sw
 
 kayser_grid = kayser_quadrature["S"].values
 kayser_weights = kayser_quadrature["W"].values
+
 frequency_grid = kayser_to_hz(kayser_grid)
-
-
-# def load_optimized_flux_quadrature(
-#     quadrature_dir: (
-#         str | Path | None
-#     ) = "/Users/rk/.cache/arts/arts-xml-data-3.0.0dev8/planets/Earth/Optimized-Flux-Frequencies",
-#     band: str | None = "LW",
-# ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-#     """Load optimized flux frequencies and weights from ARTS XML files.
-
-#     Returns
-#     -------
-#     tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
-#         (f_grid_hz, kayser_grid, weights_hz, weights_kayser)
-#     """
-
-#     import pyarts3
-
-#     from faxsec.utils import hz_to_kayser
-
-#     base = Path(quadrature_dir)
-#     prefix = str(band).upper()
-#     f_path = base / f"{prefix}-flux-optimized-f_grid.xml"
-#     w_path = base / f"{prefix}-flux-optimized-quadrature_weights.xml"
-#     # Keep explicit Python references and copy data into NumPy-owned memory.
-#     # ARTS vectors can otherwise be views to temporary buffers.
-#     f_vec = pyarts3.xml.load(str(f_path))
-#     w_vec = pyarts3.xml.load(str(w_path))
-#     f_grid_hz = np.array(f_vec, dtype=float, copy=True)
-#     weights_hz = np.array(w_vec, dtype=float, copy=True)
-
-#     if f_grid_hz.ndim != 1 or weights_hz.ndim != 1:
-#         raise ValueError("Optimized quadrature f_grid and weights must be 1D vectors")
-#     if f_grid_hz.shape != weights_hz.shape:
-#         raise ValueError("Optimized quadrature frequencies and weights must match")
-
-#     kayser_grid = hz_to_kayser(f_grid_hz)
-#     weights_kayser = hz_to_kayser(weights_hz)
-#     return f_grid_hz, kayser_grid, weights_hz, weights_kayser
-
-
-# frequency_grid, kayser_grid, weights_hz, kayser_weights = (
-#     load_optimized_flux_quadrature(band="LW")
-# )
-
 
 from faxsec.arts import ARTSAbsorber
 from faxsec.functional import FunctionalAbsorber
@@ -70,29 +32,26 @@ SELF_SCALING = {
 # %%
 species = {
     "H2O": None,
-    "CO2": (
-        "CO2",
-        # "CO2-CKDMT252"
-    ),
+    "CO2": ("CO2", "CO2-CKDMT252"),  # ,
     "O3": None,
     "O2": (
-        "O2",
-        # "O2-CIA-O2",
+        "O2",  # "O2-*-1e12-1e99" produces parsing error
+        "O2-CIAfunCKDMT100",
     ),
     "CH4": None,
     "N2O": None,
     "N2": (
         "N2",
-        # "N2-CIA-N2",
-    ),  # "N2-CIA-CH4" not available in pyarts3
-    # "CFC11": ("CFC11-XFIT",),
-    # "CFC12": ("CFC12-XFIT",)
+        "N2-CIAfunCKDMT252",
+        "N2-CIArotCKDMT252",
+    ),
 }
 
 
 absorbers = {}
 arts_absorbers = {}
-reference_cache_dir = Path("../data/reference_lw")
+
+reference_cache_dir = Path("../../data/reference_sw")
 
 for sp in species.keys():
     ensure_reference_dataset(
@@ -133,13 +92,14 @@ for sp in species.keys():
     )
 
 
-# %%
+# %% continuum absorbers
 from faxsec.continuum import H2OContinuum
 
-absorbers["H2O_continuum"] = H2OContinuum(
+h2o_cont = H2OContinuum(
     frequency_grid=frequency_grid,
-    data_source="../data/continuum/absco-ref_wv-mt-ckd400.nc",
+    data_source="../../data/continuum/absco-ref_wv-mt-ckd400.nc",
 )
+absorbers["H2O_continuum"] = h2o_cont
 
 arts_absorbers["H2O_continuum"] = ARTSAbsorber(
     species="H2O",
@@ -149,30 +109,79 @@ arts_absorbers["H2O_continuum"] = ARTSAbsorber(
         "H2O-SelfContCKDMT400",
     ),
 )
-# %%
+# %% Halocarbon absorbers
 from faxsec.xfit import CrossFitAbsorber
 
-absorbers["CFC11"] = CrossFitAbsorber(
+cfc11_absorber = CrossFitAbsorber(
     species="CFC11",
     frequency_grid=frequency_grid,
     data_source="../data/halocarbon/CFC11-XFIT.xml",
 )
 
-absorbers["CFC12"] = CrossFitAbsorber(
+absorbers["CFC11"] = cfc11_absorber
+# arts_absorbers["CFC11"] = ARTSAbsorber(
+#     species="CFC11",
+#     frequency_grid=frequency_grid,
+#     arts_tag=("CFC11-XFIT",),
+# )
+cfc12_absorber = CrossFitAbsorber(
     species="CFC12",
     frequency_grid=frequency_grid,
-    data_source="../data/halocarbon/CFC12-XFIT.xml",
+    data_source="../../data/halocarbon/CFC12-XFIT.xml",
 )
 
-# %%
+absorbers["CFC12"] = cfc12_absorber
+# arts_absorbers["CFC12"] = ARTSAbsorber(
+#     species="CFC12",
+#     frequency_grid=frequency_grid,
+#     arts_tag=("CFC12-XFIT",),
+# )
+# add O3-XFIT seperately as  arts inerpolation is not good on coarse grid
+absorbers["O3-XFIT"] = CrossFitAbsorber(
+    species="O3",
+    frequency_grid=frequency_grid,
+    data_source="../../data/halocarbon/O3-XFIT.xml",
+)
+# arts_absorbers["O3-XFIT"] = ARTSAbsorber(
+#     species="O3",
+#     frequency_grid=frequency_grid,
+#     arts_tag=("O3-XFIT",),
+# )
 
 
+# %% Solar spectra
+# import pyarts3
+# solar_source = pyarts3.xml.load(
+#     "../data/solar_spectra/solar_spectrum_July_2008.xml"
+# ).to_xarray()
+# solar_source = solar_source.rename({"Frequencys": "frequency"})
+# solar_source = xr.Dataset(
+#     {"spectral_solar_radiance": (("frequency",), solar_source.values[:, 0])},
+#     coords={"frequency": solar_source.frequency},
+# )
+
+# ddq = solar_source.interp(frequency=frequency_grid, method="cubic")
+
+ddq_solar = xr.load_dataset("../data/solar_spectra/DDQ_SW_source.h5")
 ddq = xr.Dataset(
-    {
-        "weights_hz": ("frequency", kayser_to_hz(kayser_weights)),
-    }
+    {"spectral_solar_irradiance": (("frequency",), ddq_solar.solar_source.values)},
+    coords={"frequency": frequency_grid},
 )
+ddq.attrs["description"] = (
+    "Solar spectrum from July 2008, interpolated to model frequency grid"
+)
+ddq.attrs["source"] = "../data/solar_spectra/solar_spectrum_July_2008.xml"
 ddq.attrs["model_class"] = "DDQ"
+
+ddq["weights_hz"] = ("frequency", kayser_to_hz(kayser_weights))
+
+ddq_rayleigh = xr.load_dataset("../data/ddq/DDQ_Rayleigh.h5")
+
+ddq["xsec_rayleigh"] = (
+    "frequency",
+    ddq_rayleigh["Rayleigh_xsec"].values,  # * 100,
+)  # idk why 100 gives the right answers
+# %% Save to nc
 
 datatree = xr.DataTree()
 datasets = [absorber.to_dataset() for absorber in absorbers.values()]
@@ -189,14 +198,14 @@ for key, ds in groups.items():
 
 datatree["DDQ"] = ddq
 
-datatree.to_netcdf("../data/ff/test_3_lw.nc", mode="w")
-
+datatree.to_netcdf("../data/ff/test_3_sw.nc", mode="w")
 # %%
 # Test loading data into functional absorber
 # from faxsec.functional import FunctionalAbsorber
 
 # dt = xr.open_datatree("../data/ff/test_4.nc")
 
+# # %%
 # dt_hr = dt["Hinge_Rational"]
 # absorbers = {}
 # for sp in dt_hr.species.values:
@@ -206,44 +215,13 @@ datatree.to_netcdf("../data/ff/test_3_lw.nc", mode="w")
 
 # %%
 
-
 import matplotlib.pyplot as plt
 
-p = np.array([5e4, 1000e2, 1e2])
-t = np.array([150, 273, 300])
+# p = np.array([5e4, 1000e2, 1e2])
+# t = np.array([250, 273, 300])
 
-# p = [500e2]
-# t = [250]
-
-
-def simple_vmr_profile(
-    species: str, pressure: np.ndarray, temperature: np.ndarray
-) -> np.ndarray:
-    """Return a simple level-wise VMR profile for one species."""
-    pressure = np.asarray(pressure, dtype=float)
-    temperature = np.asarray(temperature, dtype=float)
-
-    if "H2O" in species:
-        vmr = np.full_like(pressure, 0.001, dtype=float)
-    elif species == "CO2":
-        vmr = np.full_like(pressure, 4.2e-4, dtype=float)
-    elif species == "O2":
-        vmr = np.full_like(pressure, 0.2095, dtype=float)
-    elif species == "CH4":
-        vmr = np.full_like(pressure, 1.9e-6, dtype=float)
-    elif species == "N2O":
-        vmr = np.full_like(pressure, 3.3e-7, dtype=float)
-    elif species == "N2":
-        vmr = np.full_like(pressure, 0.7808, dtype=float)
-    elif species == "CFC11":
-        vmr = np.full_like(pressure, 2.5e-10, dtype=float)
-    elif species == "CFC12":
-        vmr = np.full_like(pressure, 5.0e-10, dtype=float)
-    else:
-        vmr = np.full_like(pressure, 1e-9, dtype=float)
-
-    return vmr
-
+p = [500e2]
+t = [250]
 
 species_order = list(absorbers.keys())
 vmr_matrix = np.column_stack(
@@ -279,7 +257,7 @@ for i in range(len(p)):
         ax[0].scatter(
             kayser_grid,
             xsec[0],
-            s=kayser_weights / 2,
+            s=kayser_weights / 10,
             alpha=0.5,
         )
 
@@ -289,23 +267,21 @@ for i in range(len(p)):
             np.log10(xsec[0] / xsec_arts[0]),
             label=sp,
             alpha=0.5,
-            s=kayser_weights / 2,
+            s=kayser_weights / 10,
         )
 
     ax[0].set_ylabel("Cross-section (m²)")
     ax[0].set_yscale("log")
-    ax[0].set_ylim(1e-40, None)
+    ax[0].set_ylim(1e-40, 1e-20)
     # ax[0].legend(markerscale=1)
 
     ax[1].legend()
     ax[1].set_xlabel("Frequency (cm⁻¹)")
     ax[1].set_ylabel("Log10 ratio (model / ARTS)")
-    ax[1].set_ylim(-10, 10)
 
     # ax[1].set_yscale("log", base=10)
     plt.suptitle(f"Pressure: {p[i]:.2e} Pa, Temperature: {t[i]:.1f} K")
     plt.tight_layout()
     plt.show()
-
 
 # %%

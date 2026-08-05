@@ -6,25 +6,12 @@ import xarray as xr
 
 from faxsec.constants import SELF_SCALING
 from faxsec.functional import FunctionalAbsorber
-from faxsec.utils import ensure_reference_dataset, kayser_to_hz, reference_cache_path
-
-
-def rayleigh_xsec_stamnes_2017(frequency_hz: np.ndarray) -> np.ndarray:
-
-    from faxsec.constants import LIGHT_SPEED
-
-    # Convert frequency to wavelength in microns
-    wavelength = LIGHT_SPEED / frequency_hz * 1e6  # microns
-
-    # Coefficients for the polynomial
-    a = np.array([3.9729066, 4.6547659e-2, 4.5055995e-4, 2.3229848e-5])
-
-    # Calculate the Rayleigh scattering cross-section
-    rayleigh_xsec = (
-        np.polyval(a[::-1], wavelength ** (-2)) * 1e-28 * 1e-4 / wavelength**4  # m2
-    )
-
-    return rayleigh_xsec
+from faxsec.utils import (
+    ensure_reference_dataset,
+    kayser_to_hz,
+    rayleigh_xsec_stamnes_2017,
+    reference_cache_path,
+)
 
 
 def train_fax(

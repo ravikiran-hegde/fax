@@ -9,6 +9,7 @@ from numpy.typing import ArrayLike
 
 from faxsec.constants import (
     BOLTZMANN,
+    DEFAULT_VMR,
     LIGHT_SPEED,
     PLANCK,
     REF_PRESSURE,
@@ -74,33 +75,39 @@ def rad_fun(nu, T):
     return result.item() if result.ndim == 0 else result
 
 
+def rayleigh_xsec_stamnes_2017(frequency_hz: np.ndarray) -> np.ndarray:
+    # TODO: implement as a absorber?
+    from faxsec.constants import LIGHT_SPEED
+
+    # Convert frequency to wavelength in microns
+    wavelength = LIGHT_SPEED / frequency_hz * 1e6  # microns
+
+    # Coefficients for the polynomial
+    a = np.array([3.9729066, 4.6547659e-2, 4.5055995e-4, 2.3229848e-5])
+
+    # Calculate the Rayleigh scattering cross-section
+    rayleigh_xsec = (
+        np.polyval(a[::-1], wavelength ** (-2)) * 1e-28 * 1e-4 / wavelength**4  # m2
+    )
+
+    return rayleigh_xsec
+
+
 def simple_vmr_profile(
-    species: str, pressure: np.ndarray, temperature: Optional[np.ndarray] = None
+    species: str,
+    pressure: np.ndarray,
+    temperature: Optional[np.ndarray] = None,
+    default_vmrs: dict[str, float] = DEFAULT_VMR,
 ) -> np.ndarray:
     """Return a simple level-wise VMR profile for one species."""
     pressure = np.asarray(pressure, dtype=float)
     temperature = (
         np.asarray(temperature, dtype=float) if temperature is not None else None
     )
-
-    if "H2O" in species:
-        vmr = np.full_like(pressure, 0.001, dtype=float)
-    elif species == "CO2":
-        vmr = np.full_like(pressure, 4.2e-4, dtype=float)
-    elif species == "O2":
-        vmr = np.full_like(pressure, 0.2095, dtype=float)
-    elif species == "CH4":
-        vmr = np.full_like(pressure, 1.9e-6, dtype=float)
-    elif species == "N2O":
-        vmr = np.full_like(pressure, 3.3e-7, dtype=float)
-    elif species == "N2":
-        vmr = np.full_like(pressure, 0.7808, dtype=float)
-    elif species == "CFC11":
-        vmr = np.full_like(pressure, 2.5e-10, dtype=float)
-    elif species == "CFC12":
-        vmr = np.full_like(pressure, 5.0e-10, dtype=float)
+    if species in default_vmrs:
+        vmr = np.full_like(pressure, default_vmrs[species], dtype=float)
     else:
-        vmr = np.full_like(pressure, 1e-9, dtype=float)
+        vmr = np.full_like(pressure, default_vmrs["Other"], dtype=float)
 
     return vmr
 

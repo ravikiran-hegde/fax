@@ -22,13 +22,27 @@ REF_VMR = 1e-9
 
 EPS = 1e-200
 
-SELF_SCALING = { #unweighted median ratio of self-broadened to air-broadened half-widths
-    "H2O": 4.078,
-    "CO2": 0.282,
-    "O3": 0.247,
-    "CH4": 0.311,
-    "N2O": 0.254,
-    "CO": 0.067,
-    "O2": 0.004,
-    "N2": 0.006,
+SELF_SCALING = (
+    {  # unweighted median ratio of self-broadened to air-broadened half-widths
+        "H2O": 4.078,
+        "CO2": 0.282,
+        "O3": 0.247,
+        "CH4": 0.311,
+        "N2O": 0.254,
+        "CO": 0.067,
+        "O2": 0.004,
+        "N2": 0.006,
+    }
+)
+
+DEFAULT_VMR = {
+    "N2": 0.7808,
+    "O2": 0.2095,
+    "CO2": 4.2e-4,
+    "H2O": 0.001,
+    "CH4": 1.9e-6,
+    "N2O": 3.3e-7,
+    "CFC11": 2.5e-10,
+    "CFC12": 5.0e-10,
+    "Other": 1e-9,
 }
