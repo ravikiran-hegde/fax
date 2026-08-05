@@ -70,9 +70,10 @@ SELF_SCALING = {
 # %%
 species = {
     "H2O": None,
-    "CO2": ("CO2", 
-            # "CO2-CKDMT252"
-            ),
+    "CO2": (
+        "CO2",
+        # "CO2-CKDMT252"
+    ),
     "O3": None,
     "O2": (
         "O2",

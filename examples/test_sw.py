@@ -27,10 +27,7 @@ SELF_SCALING = {
 # %%
 species = {
     "H2O": None,
-    "CO2": (
-        "CO2",
-        "CO2-CKDMT252"
-    ),  # ,
+    "CO2": ("CO2", "CO2-CKDMT252"),  # ,
     "O3": None,
     "O2": (
         "O2",  # "O2-*-1e12-1e99" produces parsing error
@@ -177,7 +174,7 @@ ddq_rayleigh = xr.load_dataset("../data/ddq/DDQ_Rayleigh.h5")
 
 ddq["xsec_rayleigh"] = (
     "frequency",
-    ddq_rayleigh["Rayleigh_xsec"].values# * 100,
+    ddq_rayleigh["Rayleigh_xsec"].values,  # * 100,
 )  # idk why 100 gives the right answers
 # %% Save to nc
 
