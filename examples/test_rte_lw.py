@@ -9,14 +9,14 @@ import numpy as np
 import xarray as xr
 from pyrte_rrtmgp import rte
 
-from model.constants import (
+from faxsec.constants import (
     BOLTZMANN,
     GRAVITY,
     LIGHT_SPEED,
     MEAN_MASS_AIR,
     PLANCK,
 )
-from model.gas_optics import GasOptics
+from faxsec.gas_optics import GasOptics
 
 required_vars = [
     "pres_layer",

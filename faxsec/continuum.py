@@ -30,7 +30,7 @@ from typing import Optional
 import numpy as np
 import xarray as xr
 
-from model.constants import CM_TO_M
+from faxsec.constants import CM_TO_M
 
 from .abstract_class import (
     ARRAYLIKE,

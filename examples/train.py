@@ -4,14 +4,14 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
-from model.constants import SELF_SCALING
-from model.functional import FunctionalAbsorber
-from model.utils import ensure_reference_dataset, kayser_to_hz, reference_cache_path
+from faxsec.constants import SELF_SCALING
+from faxsec.functional import FunctionalAbsorber
+from faxsec.utils import ensure_reference_dataset, kayser_to_hz, reference_cache_path
 
 
 def rayleigh_xsec_stamnes_2017(frequency_hz: np.ndarray) -> np.ndarray:
 
-    from model.constants import LIGHT_SPEED
+    from faxsec.constants import LIGHT_SPEED
 
     # Convert frequency to wavelength in microns
     wavelength = LIGHT_SPEED / frequency_hz * 1e6  # microns
@@ -155,7 +155,7 @@ for ddq_case in ddq_files:
         absorbers[sp] = func_abs
 
     # halocarbons
-    from model.xfit import CrossFitAbsorber
+    from faxsec.xfit import CrossFitAbsorber
 
     for sp in halocarbons[band].keys():
         func_abs = CrossFitAbsorber(
@@ -166,7 +166,7 @@ for ddq_case in ddq_files:
         absorbers[sp] = func_abs
 
     # continuum
-    from model.continuum import H2OContinuum
+    from faxsec.continuum import H2OContinuum
 
     for sp in continuum.keys():
         absorbers[f"{sp}_continuum"] = H2OContinuum(

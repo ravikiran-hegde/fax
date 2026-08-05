@@ -7,7 +7,7 @@ import numpy as np
 import xarray as xr
 from numpy.typing import ArrayLike
 
-from model.constants import (
+from faxsec.constants import (
     BOLTZMANN,
     LIGHT_SPEED,
     PLANCK,

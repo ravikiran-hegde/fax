@@ -4,11 +4,11 @@ from typing import Dict, Tuple, Type
 import numpy as np
 import xarray as xr
 
-from model.abstract_class import ARRAYLIKE, SavableModel, SingleSpeciesModel
-from model.constants import BOLTZMANN
-from model.continuum import H2OContinuum
-from model.functional import FunctionalAbsorber
-from model.xfit import CrossFitAbsorber
+from faxsec.abstract_class import ARRAYLIKE, SavableModel, SingleSpeciesModel
+from faxsec.constants import BOLTZMANN
+from faxsec.continuum import H2OContinuum
+from faxsec.functional import FunctionalAbsorber
+from faxsec.xfit import CrossFitAbsorber
 
 
 @dataclass
@@ -50,7 +50,7 @@ class GasOptics:
         for class_name in dt.keys():
             absorber_cls = absorber_registry.get(class_name, None)
             if absorber_cls is None:
-                print(f"Unsupported model class {class_name} in datatree. Skipping.")
+                print(f"Unsupported faxsec class {class_name} in datatree. Skipping.")
             else:
                 ds = dt[class_name]
                 for sp in ds.species.values:
@@ -125,7 +125,7 @@ class GasOptics:
             model_args = model_args[0].split("_") if model_args else ()
 
         if model_type in ("ARTS", "A"):
-            from model.arts import ARTSAbsorber
+            from faxsec.arts import ARTSAbsorber
 
             return ARTSAbsorber(
                 species=species_name,
@@ -135,7 +135,7 @@ class GasOptics:
 
         elif model_type in ("Functional", "F"):
 
-            from model.single_absorber import FunctionalAbsorber
+            from faxsec.functional import FunctionalAbsorber
 
             pressure_form_name, temperature_form_name, self_scaling = model_args
             return FunctionalAbsorber(
@@ -146,7 +146,7 @@ class GasOptics:
                 self_scaling=float(self_scaling),
             )
         elif model_type in ("Continuum", "C"):
-            from model.continuum import ContinuumAbsorber
+            from faxsec.continuum import ContinuumAbsorber
 
             continuum_type = model_args
             return ContinuumAbsorber(

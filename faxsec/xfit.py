@@ -11,7 +11,7 @@ import numpy as np
 import pyarts3
 import xarray as xr
 
-from .abstract_class import (
+from faxsec.abstract_class import (
     ARRAYLIKE,
     AbsorberConfig,
     SavableModel,

@@ -4,8 +4,8 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
-from model.gas_optics import GasOptics
-from model.utils import (
+from faxsec.gas_optics import GasOptics
+from faxsec.utils import (
     hz_to_kayser,
     kayser_to_hz,
     simple_vmr_profile,
@@ -48,21 +48,21 @@ gas_optics = GasOptics.from_datatree(dt)
 absorbers = gas_optics._absorbers
 
 # dt_hr = dt["Hinge_Rational"]
-# from model.single_absorber import FunctionalAbsorber
+# from faxsec.functional import FunctionalAbsorber
 # for sp in species.keys():
 #     ds = dt_hr.sel(species=sp)
 #     func_abs = FunctionalAbsorber.from_dataset(ds=ds.to_dataset())
 #     absorbers[sp] = func_abs
 
 # dt_cont = dt["both_continuum_MT_CKD_4_3"]
-# from model.continuum import H2OContinuum
+# from faxsec.continuum import H2OContinuum
 # absorbers["H2O" + "_both_Continuum"] = H2OContinuum.from_dataset(
 #     ds=dt_cont.to_dataset()
 # )
 
 
 # dt_xfit = dt["XFIT"]
-# from model.xfit import CrossFitAbsorber
+# from faxsec.xfit import CrossFitAbsorber
 # for sp in ["CFC11", "CFC12"]:
 #     ds = dt_xfit.sel(species=sp)
 #     xfit_abs = CrossFitAbsorber.from_dataset(ds=ds.to_dataset())

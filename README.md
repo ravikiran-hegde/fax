@@ -10,11 +10,9 @@ pip install -e .
 
 ## Import
 
-The legacy `model` package remains available after installation, and a `faxsec.model` compatibility namespace is provided for new code.
-
 ```python
-from model.gas_optics import GasOptics
-from faxsec.model import constants
+from faxsec.gas_optics import GasOptics
+from faxsec.constants import BOLTZMANN
 ```
 
 ## Examples

@@ -9,7 +9,7 @@ import pyarts3
 import xarray as xr
 from matplotlib import pyplot as plt
 
-from model.utils import hz_to_kayser, kayser_to_hz
+from faxsec.utils import hz_to_kayser, kayser_to_hz
 
 species = "O3"
 
@@ -152,8 +152,8 @@ def compute_xsec(ds, p, T):
 
 # %%
 
-from model.arts import ARTSAbsorber
-from model.xfit import CrossFitAbsorber
+from faxsec.arts import ARTSAbsorber
+from faxsec.xfit import CrossFitAbsorber
 
 lw_ddq_loc = "../data/ddq/DDQ_LW.h5"
 kayser_quadrature_lw = xr.load_dataset(lw_ddq_loc)

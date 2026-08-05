@@ -7,14 +7,14 @@ from typing import Optional
 import numpy as np
 import xarray as xr
 
-from .abstract_class import (
+from faxsec.abstract_class import (
     ARRAYLIKE,
     AbsorberConfig,
     SavableModel,
     SingleSpeciesModel,
 )
-from .constants import REF_PRESSURE, REF_TEMPERATURE, REF_VMR
-from .forms import FunctionalForm, functional_form_registry
+from faxsec.constants import REF_PRESSURE, REF_TEMPERATURE, REF_VMR
+from faxsec.forms import FunctionalForm, functional_form_registry
 
 
 def lnp(p, ref_pressure, **_ignored):

@@ -9,8 +9,8 @@ import numpy as np
 import xarray as xr
 from pyrte_rrtmgp import rte
 
-from model.constants import GRAVITY, MEAN_MASS_AIR
-from model.gas_optics import GasOptics
+from faxsec.constants import GRAVITY, MEAN_MASS_AIR
+from faxsec.gas_optics import GasOptics
 
 rte  # just so its used and not deleted during save
 

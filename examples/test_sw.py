@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
-from model.utils import ensure_reference_dataset, kayser_to_hz, reference_cache_path
+from faxsec.utils import ensure_reference_dataset, kayser_to_hz, reference_cache_path
 
 sw_ddq_loc = "../data/ddq/DDQ_SW.h5"
 kayser_quadrature_sw = xr.load_dataset(sw_ddq_loc)
@@ -17,8 +17,8 @@ kayser_weights = kayser_quadrature["W"].values
 
 frequency_grid = kayser_to_hz(kayser_grid)
 
-from model.arts import ARTSAbsorber
-from model.functional import FunctionalAbsorber
+from faxsec.arts import ARTSAbsorber
+from faxsec.functional import FunctionalAbsorber
 
 SELF_SCALING = {
     "H2O": 4.078,
@@ -91,7 +91,7 @@ for sp in species.keys():
 
 
 # %% continuum absorbers
-from model.continuum import H2OContinuum
+from faxsec.continuum import H2OContinuum
 
 h2o_cont = H2OContinuum(
     frequency_grid=frequency_grid,
@@ -108,7 +108,7 @@ arts_absorbers["H2O_continuum"] = ARTSAbsorber(
     ),
 )
 # %% Halocarbon absorbers
-from model.xfit import CrossFitAbsorber
+from faxsec.xfit import CrossFitAbsorber
 
 cfc11_absorber = CrossFitAbsorber(
     species="CFC11",
@@ -199,7 +199,7 @@ datatree["DDQ"] = ddq
 datatree.to_netcdf("../data/ff/test_3_sw.nc", mode="w")
 # %%
 # Test loading data into functional absorber
-# from model.single_absorber import FunctionalAbsorber
+# from faxsec.functional import FunctionalAbsorber
 
 # dt = xr.open_datatree("../data/ff/test_4.nc")
 

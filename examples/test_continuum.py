@@ -3,8 +3,8 @@ from pathlib import Path
 
 import xarray as xr
 
-from model.continuum import H2OContinuum
-from model.utils import kayser_to_hz
+from faxsec.continuum import H2OContinuum
+from faxsec.utils import kayser_to_hz
 
 lw_ddq_loc = "../data/ddq/DDQ_LW.h5"
 kayser_quadrature_lw = xr.load_dataset(lw_ddq_loc)
@@ -25,7 +25,7 @@ h2o_cont = H2OContinuum(
 )
 absorbers["H2O_continuum"] = h2o_cont
 
-from model.arts import PYARTS_VERSION, ARTSAbsorber
+from faxsec.arts import PYARTS_VERSION, ARTSAbsorber
 
 arts_absorbers["H2O_continuum"] = ARTSAbsorber(
     species="H2O",

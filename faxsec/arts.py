@@ -13,7 +13,7 @@ from typing import Optional, Sequence
 import numpy as np
 import pyarts3 as pyarts
 
-from model.abstract_class import ARRAYLIKE, AbsorberConfig, SingleSpeciesModel
+from faxsec.abstract_class import ARRAYLIKE, AbsorberConfig, SingleSpeciesModel
 
 from .constants import EPS, REF_VMR
 

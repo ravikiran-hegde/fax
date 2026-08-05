@@ -5,9 +5,9 @@ import numpy as np
 import xarray as xr
 from pyrte_rrtmgp import rte
 
-from model.constants import AVOGADRO, GRAVITY, MEAN_MOLAR_MASS_AIR, MEAN_MOLAR_MASS_H2O
-from model.gas_optics import GasOptics
-from model.utils import planck_nu
+from faxsec.constants import AVOGADRO, GRAVITY, MEAN_MOLAR_MASS_AIR, MEAN_MOLAR_MASS_H2O
+from faxsec.gas_optics import GasOptics
+from faxsec.utils import planck_nu
 
 rte  # so that autoformatters don't remove the import
 
