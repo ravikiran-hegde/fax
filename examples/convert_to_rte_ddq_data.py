@@ -1,10 +1,8 @@
 # %%
-import sys
 from pathlib import Path
 
 import xarray as xr
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from model.constants import CM_TO_M, LIGHT_SPEED
 from model.utils import hz_to_kayser
 
