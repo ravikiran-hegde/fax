@@ -11,3 +11,4 @@ figures/
 *.log
 *.npz
 *.nc
+*egg-info/
