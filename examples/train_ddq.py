@@ -101,10 +101,30 @@ lines = {
 }
 
 halocarbons = {
-    "SW": {"CFC11": ("CFC11-XFIT",), "CFC12": ("CFC12-XFIT",), "O3-XFIT": ("O3-XFIT",)},
+    "SW": {
+        "O3-XFIT": ("O3-XFIT",),
+        "CFC11": ("CFC11-XFIT",),
+        "CFC12": ("CFC12-XFIT",),
+        "HFC125": ("HFC125-XFIT",),
+        "HFC32": ("HFC32-XFIT",),
+        "CCL4": ("CCL4-XFIT",),
+        "HFC143A": ("HFC143A-XFIT",),
+        "HFC23": ("HFC23-XFIT",),
+        "CF4": ("CF4-XFIT",),
+        # "CFC22": ("CFC22-XFIT",),
+        "HFC134A": ("HFC134A-XFIT",),
+    },
     "LW": {
         "CFC11": ("CFC11-XFIT",),
         "CFC12": ("CFC12-XFIT",),
+        "HFC125": ("HFC125-XFIT",),
+        "HFC32": ("HFC32-XFIT",),
+        "CCL4": ("CCL4-XFIT",),
+        "HFC143A": ("HFC143A-XFIT",),
+        "HFC23": ("HFC23-XFIT",),
+        "CF4": ("CF4-XFIT",),
+        # "CFC22": ("CFC22-XFIT",),
+        "HFC134A": ("HFC134A-XFIT",),
     },
 }
 
@@ -115,11 +135,11 @@ continuum = {
     ),
 }
 
-ddq_loc = "../data/ddq/Additional configurations"
-ddq_files = [
-    f"{ddq_loc}/DDQ_{band}_{i}.h5" for band in ["LW", "SW"] for i in range(1, 9)
-]
-# ddq_files = [f"../data/ddq/DDQ_{band}.h5" for band in ["LW", "SW"]]
+# ddq_loc = "../data/ddq/Additional configurations"
+# ddq_files = [
+#     f"{ddq_loc}/DDQ_{band}_{i}.h5" for band in ["LW", "SW"] for i in range(1, 9)
+# ]
+ddq_files = [f"../data/ddq/DDQ_{band}.h5" for band in ["LW", "SW"]]
 
 for ddq_case in ddq_files:
     kayser_quadrature = xr.load_dataset(ddq_case)

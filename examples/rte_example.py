@@ -23,16 +23,6 @@ rename_dict = {
     "pres_level": "pressure_level",
     "temp_layer": "temperature_layer",
     "temp_level": "temperature_level",
-    "h2o": "H2O",
-    "co2": "CO2",
-    "o3": "O3",
-    "ch4": "CH4",
-    "n2o": "N2O",
-    "co": "CO",
-    "o2": "O2",
-    "n2": "N2",
-    "cfc11": "CFC11",
-    "cfc12": "CFC12",
 }
 
 
@@ -57,6 +47,17 @@ def do_ddq_example(file_path, band):
     atm_ds = xr.open_dataset(file_path)
     atm_ds = atm_ds.rename({k: v for k, v in rename_dict.items() if k in atm_ds})
 
+    gas_optics_dt = xr.open_datatree(f"../data/ff/gas_optics_DDQ_{band.upper()}.nc")
+    gas_optics = GasOptics.from_datatree(gas_optics_dt)
+
+    atm_ds = atm_ds.rename(
+        {
+            species.lower(): species.upper()
+            for species in gas_optics.species
+            if species.lower() in atm_ds
+        }
+    )
+
     dp = np.abs(atm_ds["pressure_level"].diff(dim="level", label="lower")).rename(
         {"level": "layer"}
     )
@@ -65,9 +66,6 @@ def do_ddq_example(file_path, band):
     atm_ds["N_per_m2_dry"] = dp / GRAVITY * AVOGADRO / (m_air * (1.0 + vmr_h2o))
 
     flat_ds = atm_ds.stack(atm_points=("variant", "col", "layer"))
-
-    gas_optics_dt = xr.open_datatree(f"../data/ff/gas_optics_DDQ_{band.upper()}.nc")
-    gas_optics = GasOptics.from_datatree(gas_optics_dt)
 
     # Compute tau and other related fields for RTE
     optical_props = (
@@ -90,7 +88,7 @@ def do_ddq_example(file_path, band):
         weights = gas_optics_dt["DDQ"]["weights_hz"]
         optical_props["toa_source"] = (
             ssi
-            * (atm_ds["total_solar_irradiance"] / (ssi * weights).sum(dim="frequency"))
+            # * (atm_ds["total_solar_irradiance"] / (ssi * weights).sum(dim="frequency"))
             * weights
         )
         optical_props = optical_props.expand_dims({"gpt": 1}, axis=-1)
@@ -226,15 +224,15 @@ for example in range(len(example_files)):
         f"../data/rte_examples/pyddq_fluxes_{example_files[example].split('/')[-1].split('-')[0]}.nc"
     )
 
-# for example in range(len(example_files)):
-#     rrtmgp_fluxes_lw = do_rrtgmp_example(example_files[example], "lw")
-#     rrtmgp_fluxes_sw = do_rrtgmp_example(example_files[example], "sw")
-#     rrtmgp_fluxes = xr.merge(
-#         [rrtmgp_fluxes_lw, rrtmgp_fluxes_sw], compat="equals", join="outer"
-#     )
-#     add_net_flux(rrtmgp_fluxes)
-#     rrtmgp_fluxes.to_netcdf(
-#         f"../data/rte_examples/pyrrtmgp_fluxes_{example_files[example].split('/')[-1].split('-')[0]}.nc"
-#     )
+for example in range(len(example_files)):
+    rrtmgp_fluxes_lw = do_rrtgmp_example(example_files[example], "lw")
+    rrtmgp_fluxes_sw = do_rrtgmp_example(example_files[example], "sw")
+    rrtmgp_fluxes = xr.merge(
+        [rrtmgp_fluxes_lw, rrtmgp_fluxes_sw], compat="equals", join="outer"
+    )
+    add_net_flux(rrtmgp_fluxes)
+    rrtmgp_fluxes.to_netcdf(
+        f"../data/rte_examples/pyrrtmgp_fluxes_{example_files[example].split('/')[-1].split('-')[0]}.nc"
+    )
 
 # %%
