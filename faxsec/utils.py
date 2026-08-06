@@ -107,7 +107,7 @@ def simple_vmr_profile(
     if species in default_vmrs:
         vmr = np.full_like(pressure, default_vmrs[species], dtype=float)
     else:
-        vmr = np.full_like(pressure, default_vmrs["Other"], dtype=float)
+        vmr = np.full_like(pressure, REF_VMR, dtype=float)
 
     return vmr
 

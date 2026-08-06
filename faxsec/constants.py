@@ -44,5 +44,4 @@ DEFAULT_VMR = {
     "N2O": 3.3e-7,
     "CFC11": 2.5e-10,
     "CFC12": 5.0e-10,
-    "Other": 1e-9,
 }
