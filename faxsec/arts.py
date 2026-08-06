@@ -17,7 +17,7 @@ from faxsec.abstract_class import ARRAYLIKE, AbsorberConfig, SingleSpeciesModel
 from faxsec.constants import DEFAULT_VMR, EPS, REF_VMR
 
 LINE_CUTOFF_HZ = 750e9
-PYARTS_VERSION = "3.0.0dev8"
+PYARTS_VERSION = "3.0.0dev10"
 
 
 def species_from_tag(tag: str) -> str:

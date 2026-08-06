@@ -128,9 +128,10 @@ class CrossFitAbsorber(SingleSpeciesModel, SavableModel):
         xml_path = Path(xml_path)
         source = pyarts3.xml.load(str(xml_path)).to_xarray()
 
-        species = source.attrs.get("species")
-        if species is None:
-            raise ValueError(f"Species metadata missing in {xml_path}")
+        species = xml_path.stem.split("-")[0]  # extract from xml path
+        # species = source.attrs.get("species")
+        # if species is None:
+        #     raise ValueError(f"Species metadata missing in {xml_path}")
 
         band_names = [name for name in source.data_vars if name.endswith("_coeffs")]
         if not band_names:

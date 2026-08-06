@@ -32,9 +32,7 @@ def xsec_xml_to_dataset(xml_path: str | Path) -> xr.Dataset:
     xml_path = Path(xml_path)
     source = pyarts3.xml.load(str(xml_path)).to_xarray()
 
-    species = source.attrs.get("species")
-    if species is None:
-        raise ValueError(f"Species metadata missing in {xml_path}")
+    species = xml_path.stem.split("-")[0]  # extract from xml path
 
     band_names = [name for name in source.data_vars if name.endswith("_coeffs")]
     if not band_names:
@@ -116,7 +114,7 @@ def xsec_xml_to_dataset(xml_path: str | Path) -> xr.Dataset:
 
 
 halocarbon = xsec_xml_to_dataset(
-    f"/Users/rk/.cache/arts/arts-cat-data-3.0.0dev8/xsec/{species}-XFIT.xml"
+    f"../../data/halocarbon/{species}-XFIT.xml"
 )
 
 # %%
