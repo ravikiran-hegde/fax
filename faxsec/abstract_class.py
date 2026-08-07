@@ -76,6 +76,11 @@ class SingleSpeciesModel(ABC):
         """Return the class name of the model."""
         return self.__class__.__name__
 
+    @property
+    def species(self) -> str:
+        """Return the species name of the model."""
+        return self.config.species
+
 
 class SavableModel(ABC):
     """Abstract base class for models that can be saved to disk."""
