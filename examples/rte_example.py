@@ -1,5 +1,4 @@
 # %%
-
 import numpy as np
 import xarray as xr
 from pyrte_rrtmgp import rte
@@ -26,15 +25,44 @@ rename_dict = {
 }
 
 
-def aggregate_fluxes(fluxes, band):
+def get_gas_optics_bundle(band):
+    dt_name = (
+        "gas_optics_Highres_SW_100001.nc"
+        if band == "sw"
+        else "gas_optics_Highres_LW_100000.nc"
+    )
+    gas_optics_dt = xr.open_datatree(f"../data/ff/{dt_name}")
+    return gas_optics_dt, GasOptics.from_datatree(gas_optics_dt)
+
+
+def transpose_rte_input(optical_props):
+    if "frequency" not in optical_props.dims:
+        return optical_props
+
+    dims = tuple(dim for dim in optical_props.dims if dim != "frequency")
+    return optical_props.transpose(*dims, "frequency")
+
+
+def aggregate_fluxes(fluxes, band, keep_spectral=False):
     band = band.lower()
 
-    fluxes[f"{band}_spectral_flux_up"] = fluxes[f"{band}_flux_up"]
-    fluxes[f"{band}_spectral_flux_down"] = fluxes[f"{band}_flux_down"]
+    spectral_flux_up = fluxes[f"{band}_flux_up"]
+    spectral_flux_down = fluxes[f"{band}_flux_down"]
 
-    fluxes[f"{band}_flux_up"] = fluxes[f"{band}_spectral_flux_up"].sum("frequency")
-    fluxes[f"{band}_flux_down"] = fluxes[f"{band}_spectral_flux_down"].sum("frequency")
+    fluxes[f"{band}_flux_up"] = spectral_flux_up.sum("frequency")
+    fluxes[f"{band}_flux_down"] = spectral_flux_down.sum("frequency")
     fluxes[f"{band}_flux_net"] = fluxes[f"{band}_flux_down"] - fluxes[f"{band}_flux_up"]
+
+    if keep_spectral:
+        fluxes[f"{band}_spectral_flux_up"] = spectral_flux_up
+        fluxes[f"{band}_spectral_flux_down"] = spectral_flux_down
+    else:
+        fluxes = fluxes.drop_vars(
+            [f"{band}_spectral_flux_up", f"{band}_spectral_flux_down"],
+            errors="ignore",
+        )
+
+    return fluxes
 
 
 def add_net_flux(fluxes):
@@ -44,11 +72,10 @@ def add_net_flux(fluxes):
 
 
 def do_ddq_example(file_path, band):
-    atm_ds = xr.open_dataset(file_path)
+    atm_ds = xr.load_dataset(file_path)
     atm_ds = atm_ds.rename({k: v for k, v in rename_dict.items() if k in atm_ds})
 
-    gas_optics_dt = xr.open_datatree(f"../data/ff/gas_optics_DDQ_{band.upper()}.nc")
-    gas_optics = GasOptics.from_datatree(gas_optics_dt)
+    gas_optics_dt, gas_optics = get_gas_optics_bundle(band)
 
     atm_ds = atm_ds.rename(
         {
@@ -135,6 +162,8 @@ def do_ddq_example(file_path, band):
         optical_props = optical_props.expand_dims({"gpt": 1}, axis=-1)
         optical_props["surface_emissivity"] = atm_ds["surface_emissivity"]
 
+    optical_props = transpose_rte_input(optical_props)
+
     # True if level 0 is toa.
     optical_props.attrs["top_at_1"] = (
         atm_ds["pressure_layer"].isel(layer=0) - atm_ds["pressure_layer"].isel(layer=-1)
@@ -143,7 +172,7 @@ def do_ddq_example(file_path, band):
     # Solve RTE
     fluxes = optical_props.rte.solve(add_to_input=False)
 
-    aggregate_fluxes(fluxes, band)
+    fluxes = aggregate_fluxes(fluxes, band)
 
     if "profile_weight" in atm_ds:
         fluxes[f"global_{band}_surface_flux"] = (
@@ -221,18 +250,18 @@ for example in range(len(example_files)):
     add_net_flux(ddq_fluxes)
 
     ddq_fluxes.to_netcdf(
-        f"../data/rte_examples/pyddq_fluxes_{example_files[example].split('/')[-1].split('-')[0]}.nc"
+        f"../data/rte_examples/pyhighres_fluxes_{example_files[example].split('/')[-1].split('-')[0]}.nc"
     )
 
-for example in range(len(example_files)):
-    rrtmgp_fluxes_lw = do_rrtgmp_example(example_files[example], "lw")
-    rrtmgp_fluxes_sw = do_rrtgmp_example(example_files[example], "sw")
-    rrtmgp_fluxes = xr.merge(
-        [rrtmgp_fluxes_lw, rrtmgp_fluxes_sw], compat="equals", join="outer"
-    )
-    add_net_flux(rrtmgp_fluxes)
-    rrtmgp_fluxes.to_netcdf(
-        f"../data/rte_examples/pyrrtmgp_fluxes_{example_files[example].split('/')[-1].split('-')[0]}.nc"
-    )
+# for example in range(len(example_files)):
+#     rrtmgp_fluxes_lw = do_rrtgmp_example(example_files[example], "lw")
+#     rrtmgp_fluxes_sw = do_rrtgmp_example(example_files[example], "sw")
+#     rrtmgp_fluxes = xr.merge(
+#         [rrtmgp_fluxes_lw, rrtmgp_fluxes_sw], compat="equals", join="outer"
+#     )
+#     add_net_flux(rrtmgp_fluxes)
+#     rrtmgp_fluxes.to_netcdf(
+#         f"../data/rte_examples/pyrrtmgp_fluxes_{example_files[example].split('/')[-1].split('-')[0]}.nc"
+#     )
 
 # %%
