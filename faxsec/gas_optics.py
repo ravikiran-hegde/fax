@@ -5,6 +5,7 @@ import numpy as np
 import xarray as xr
 
 from faxsec.abstract_class import ARRAYLIKE, SavableModel, SingleSpeciesModel
+from faxsec.arts import ARTSAbsorber
 from faxsec.constants import BOLTZMANN
 from faxsec.continuum import H2OContinuum
 from faxsec.functional import FunctionalAbsorber
@@ -42,6 +43,25 @@ class GasOptics:
         gas_optics._absorbers = absorbers
         gas_optics.validate()
         return gas_optics
+
+    @classmethod
+    def from_arts_tags(
+        cls,
+        species_tags: Dict[str, Tuple[str, ...]],
+        frequency_grid: ARRAYLIKE,
+    ) -> "GasOptics":
+        """Create a GasOptics instance from ARTS species-to-tag mappings."""
+        absorbers: Dict[str, SingleSpeciesModel] = {}
+        for species, tags in species_tags.items():
+            absorber = ARTSAbsorber(
+                species=species,
+                frequency_grid=frequency_grid,
+                arts_tag=tags,
+            )
+            key = f"{species}_{absorber.class_name}"
+            absorbers[key] = absorber
+
+        return cls.from_absorbers(absorbers)
 
     @classmethod
     def from_datatree(cls, dt: xr.DataTree) -> "GasOptics":
@@ -293,7 +313,8 @@ class GasOptics:
         }
 
 
-absorber_registry: Dict[str, Type[SavableModel]] = {
+absorber_registry: Dict[str, Type[SingleSpeciesModel | SavableModel]] = {
+    "ARTS_SingleSpeciesRecipe": ARTSAbsorber,
     "XFIT": CrossFitAbsorber,
     "Hinge_Rational": FunctionalAbsorber,
     "both_continuum_MT_CKD_4_3": H2OContinuum,
