@@ -105,33 +105,33 @@ halocarbons = {
         "O3-XFIT": ("O3-XFIT",),
         "CFC11": ("CFC11-XFIT",),
         "CFC12": ("CFC12-XFIT",),
-        "HFC125": ("HFC125-XFIT",),
-        "HFC32": ("HFC32-XFIT",),
-        "CCL4": ("CCL4-XFIT",),
-        "HFC143A": ("HFC143A-XFIT",),
-        "HFC23": ("HFC23-XFIT",),
-        "CF4": ("CF4-XFIT",),
+        # "HFC125": ("HFC125-XFIT",),
+        # "HFC32": ("HFC32-XFIT",),
+        # "CCL4": ("CCL4-XFIT",),
+        # "HFC143A": ("HFC143A-XFIT",),
+        # "HFC23": ("HFC23-XFIT",),
+        # "CF4": ("CF4-XFIT",),
         # "CFC22": ("CFC22-XFIT",),
-        "HFC134A": ("HFC134A-XFIT",),
+        # "HFC134A": ("HFC134A-XFIT",),
     },
     "LW": {
         "CFC11": ("CFC11-XFIT",),
         "CFC12": ("CFC12-XFIT",),
-        "HFC125": ("HFC125-XFIT",),
-        "HFC32": ("HFC32-XFIT",),
-        "CCL4": ("CCL4-XFIT",),
-        "HFC143A": ("HFC143A-XFIT",),
-        "HFC23": ("HFC23-XFIT",),
-        "CF4": ("CF4-XFIT",),
+        # "HFC125": ("HFC125-XFIT",),
+        # "HFC32": ("HFC32-XFIT",),
+        # "CCL4": ("CCL4-XFIT",),
+        # "HFC143A": ("HFC143A-XFIT",),
+        # "HFC23": ("HFC23-XFIT",),
+        # "CF4": ("CF4-XFIT",),
         # "CFC22": ("CFC22-XFIT",),
-        "HFC134A": ("HFC134A-XFIT",),
+        # "HFC134A": ("HFC134A-XFIT",),
     },
 }
 
 continuum = {
     "H2O": (
-        "H2O-ForeignContCKDMT400",
-        "H2O-SelfContCKDMT400",
+        "H2O-ForeignContCKDMT430",
+        "H2O-SelfContCKDMT430",
     ),
 }
 
@@ -178,7 +178,7 @@ for ddq_case in ddq_files:
     for sp in continuum.keys():
         absorbers[f"{sp}_continuum"] = H2OContinuum(
             frequency_grid=frequency_grid,
-            data_source="../data/continuum/absco-ref_wv-mt-ckd400.nc",
+            data_source="../data/continuum/absco-ref_wv-mt-ckd.nc",
         )
 
     # quadrature related data

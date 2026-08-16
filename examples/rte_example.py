@@ -26,12 +26,13 @@ rename_dict = {
 
 
 def get_gas_optics_bundle(band):
-    dt_name = (
-        "gas_optics_Highres_SW_100001.nc"
-        if band == "sw"
-        else "gas_optics_Highres_LW_100000.nc"
-    )
-    gas_optics_dt = xr.open_datatree(f"../data/ff/{dt_name}")
+    # dt_name = (
+    #     "gas_optics_Highres_SW_100001.nc"
+    #     if band == "sw"
+    #     else "gas_optics_Highres_LW_100000.nc"
+    # )
+    dt_name = f"gas_optics_DDQ_{band.upper()}.nc"
+    gas_optics_dt = xr.open_datatree(f"/Users/rk/Work/faxsec/data/ff/{dt_name}")
     return gas_optics_dt, GasOptics.from_datatree(gas_optics_dt)
 
 
@@ -250,7 +251,7 @@ for example in range(len(example_files)):
     add_net_flux(ddq_fluxes)
 
     ddq_fluxes.to_netcdf(
-        f"../data/rte_examples/pyhighres_fluxes_{example_files[example].split('/')[-1].split('-')[0]}.nc"
+        f"/Users/rk/Work/faxsec/data/rte_examples/pyddq_fluxes_{example_files[example].split('/')[-1].split('-')[0]}.nc"
     )
 
 # for example in range(len(example_files)):
@@ -261,7 +262,8 @@ for example in range(len(example_files)):
 #     )
 #     add_net_flux(rrtmgp_fluxes)
 #     rrtmgp_fluxes.to_netcdf(
-#         f"../data/rte_examples/pyrrtmgp_fluxes_{example_files[example].split('/')[-1].split('-')[0]}.nc"
+#         f"/Users/rk/Work/faxsec/data/rte_examples/pyrrtmgp_fluxes_{example_files[example].split('/')[-1].split('-')[0]}.nc"
 #     )
+
 
 # %%

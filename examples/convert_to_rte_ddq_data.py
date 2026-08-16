@@ -299,7 +299,7 @@ for vars in ["xsec_species_names", "fax_species_names", "mtckd_species_names"]:
 
 gas_optics_lw = apply_variable_attrs(gas_optics_lw, VARIABLE_ATTRS)
 
-gas_optics_lw.to_netcdf("../../ddq-data/gas_optics_lw.nc")
+gas_optics_lw.to_netcdf("/Users/rk/Work/ddq-data/gas_optics_lw.nc")
 
 
 # =============================================================================
@@ -409,7 +409,7 @@ for vars in ["xsec_species_names", "fax_species_names", "mtckd_species_names"]:
 
 gas_optics_sw = apply_variable_attrs(gas_optics_sw, VARIABLE_ATTRS)
 
-gas_optics_sw.to_netcdf("../../ddq-data/gas_optics_sw.nc")
+gas_optics_sw.to_netcdf("/Users/rk/Work/ddq-data/gas_optics_sw.nc")
 
 # %%
 # %%
