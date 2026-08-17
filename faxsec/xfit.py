@@ -24,7 +24,7 @@ class CrossFitConfig(AbsorberConfig):
     """Configuration for the continuum absorber."""
 
     model: str = "XFIT"
-    data_source: Optional[str] = "./../data/halocarbon/CFC11_XFIT.xml"
+    data_source: Optional[str] = "../data/halocarbon/CFC11_XFIT.xml"
 
 
 class CrossFitAbsorber(SingleSpeciesModel, SavableModel):
