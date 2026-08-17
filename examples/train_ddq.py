@@ -130,8 +130,8 @@ halocarbons = {
 
 continuum = {
     "H2O": (
-        "H2O-ForeignContCKDMT430",
-        "H2O-SelfContCKDMT430",
+        "H2O-ForeignContCKDMT400",
+        "H2O-SelfContCKDMT400",
     ),
 }
 
@@ -178,7 +178,7 @@ for ddq_case in ddq_files:
     for sp in continuum.keys():
         absorbers[f"{sp}_continuum"] = H2OContinuum(
             frequency_grid=frequency_grid,
-            data_source="../data/continuum/absco-ref_wv-mt-ckd.nc",
+            data_source="../data/continuum/absco-ref_wv-mt-ckd400.nc",  # 430 introduuces bias
         )
 
     # quadrature related data

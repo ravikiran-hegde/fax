@@ -239,7 +239,7 @@ lines["fax_b"] = xr.concat([ones, rest], dim="fax_t_order")
 lines = lines.drop_vars(["temperature_coeffs", "t_order", "fax_vmr0"])
 
 # ---- MTCKD ------------------------------------------------------------------
-cont = data_lw["both_continuum_MT_CKD_4_3"].to_dataset().rename(CONT_RENAME)
+cont = data_lw["both_continuum_MT_CKD_4_0"].to_dataset().rename(CONT_RENAME)
 
 xsec = (
     xr.concat(
@@ -337,7 +337,7 @@ lines = lines.drop_vars(["temperature_coeffs", "t_order", "fax_vmr0"])
 
 # ---- MTCKD ------------------------------------------------------------------
 
-cont = data_sw["both_continuum_MT_CKD_4_3"].to_dataset().rename(CONT_RENAME)
+cont = data_sw["both_continuum_MT_CKD_4_0"].to_dataset().rename(CONT_RENAME)
 
 # ---- XFIT -------------------------------------------------------------------
 

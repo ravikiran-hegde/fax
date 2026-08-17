@@ -45,8 +45,8 @@ class ContinuumConfig(AbsorberConfig):
     """Configuration for the continuum absorber."""
 
     continuum_type: str = ""  # self or foreign or both
-    model: str = "MT_CKD_4.3"
-    data_source: Optional[str] = "./../data/continuum/absco-ref_wv-mt-ckd.nc"
+    model: str = "MT_CKD_4.0"
+    data_source: Optional[str] = "./../data/continuum/absco-ref_wv-mt-ckd400.nc"
 
 
 class ContinuumAbsorber(SingleSpeciesModel, SavableModel):
