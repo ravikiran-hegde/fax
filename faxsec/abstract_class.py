@@ -52,11 +52,17 @@ class SingleSpeciesModel(ABC):
             )
             # TODO: warning
         else:
+            pressure = atmosphere_ds[pressure_var]
+            temperature = atmosphere_ds[temperature_var]
+            vmr = atmosphere_ds[self.config.species]
+            if set(vmr.dims) != set(pressure.dims):
+                vmr = vmr.broadcast_like(pressure)
+        
             xsec = xr.apply_ufunc(
                 self.cross_section,
-                atmosphere_ds[pressure_var],
-                atmosphere_ds[temperature_var],
-                atmosphere_ds[self.config.species],
+                pressure,
+                temperature,
+                vmr,
                 # input_core_dims=[[], [], []],  # all are (levels,)
                 output_core_dims=[
                     [
