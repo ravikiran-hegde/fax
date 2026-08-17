@@ -6,7 +6,7 @@ from faxsec.constants import DEFAULT_VMR
 from faxsec.continuum import H2OContinuum
 from faxsec.utils import kayser_to_hz, simple_vmr_profile
 
-lw_ddq_loc = "../../data/ddq/DDQ_LW.h5"
+lw_ddq_loc = "/Users/rk/Work/faxsec/data/ddq/DDQ_LW.h5"
 kayser_quadrature_lw = xr.load_dataset(lw_ddq_loc)
 
 kayser_quadrature = kayser_quadrature_lw
@@ -21,7 +21,7 @@ arts_absorbers = {}
 
 h2o_cont = H2OContinuum(
     frequency_grid=frequency_grid,
-    data_source="../../data/continuum/absco-ref_wv-mt-ckd400.nc",
+    data_source="/Users/rk/Work/faxsec/data/continuum/absco-ref_wv-mt-ckd.nc",
 )
 absorbers["H2O_continuum"] = h2o_cont
 
@@ -31,8 +31,8 @@ arts_absorbers["H2O_continuum"] = ARTSAbsorber(
     species="H2O",
     frequency_grid=frequency_grid,
     arts_tag=(
-        "H2O-ForeignContCKDMT400",
-        "H2O-SelfContCKDMT400",
+        "H2O-ForeignContCKDMT430",
+        "H2O-SelfContCKDMT430",
     ),
 )
 
@@ -41,7 +41,7 @@ from pyarts3.recipe import SingleSpeciesAbsorption
 
 pyarts3.data.download(version=PYARTS_VERSION)
 
-cont = SingleSpeciesAbsorption(species="H2O-ForeignContCKDMT400, H2O-SelfContCKDMT400")
+cont = SingleSpeciesAbsorption(species="H2O-ForeignContCKDMT400")
 
 atm = pyarts3.arts.AtmPoint()
 for sp in DEFAULT_VMR:
@@ -100,13 +100,13 @@ for i in range(len(p)):
             s=kayser_weights / 2,
             alpha=0.5,
         )
-        ax[0].scatter(
-            kayser_grid,
-            abs,
-            s=kayser_weights / 2,
-            alpha=0.5,
-            marker="^",
-        )
+        # ax[0].scatter(
+        #     kayser_grid,
+        #     abs,
+        #     s=kayser_weights / 2,
+        #     alpha=0.5,
+        #     marker="^",
+        # )
 
         ax[1].scatter(
             kayser_grid,
