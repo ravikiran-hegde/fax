@@ -13,12 +13,28 @@ from faxsec.utils import (
     reference_cache_path,
 )
 
+suffix = 'pres_pow5'
+
+sampling_kwargs = {
+    # "p_range": [0.01, 110000],
+    # "T_range": [120.0, 360.0],
+    "N_samples": 1000,
+    # "seed": 42,
+    "method": "natural",
+    "pressure_power": 5.0,
+    # "n_p_strata": 10,
+    # "n_T_strata": 10,
+    # "samples_per_cell": 1,
+}
+
+
 
 def train_fax(
     species: str,
     arts_tag: tuple[str] | None,
     frequency_grid: np.ndarray,
     reference_cache_dir: str | Path,
+    sampling_kwargs: dict | None = None,
 ) -> FunctionalAbsorber:
     """Train a FAX model for a given species and frequency grid.
 
@@ -58,7 +74,8 @@ def train_fax(
                 arts_tag=arts_tag,
                 cache_dir=reference_cache_dir,
             )
-        )
+        ),
+        sampling_kwargs=sampling_kwargs
     )
 
     return func_abs
@@ -139,7 +156,7 @@ continuum = {
 # ddq_files = [
 #     f"{ddq_loc}/DDQ_{band}_{i}.h5" for band in ["LW", "SW"] for i in range(1, 9)
 # ]
-ddq_files = [f"../data/ddq/DDQ_{band}.h5" for band in ["LW", "SW"]]
+ddq_files = [f"../data/ddq/DDQ_{band}.h5" for band in ["LW", "SW",]]
 
 for ddq_case in ddq_files:
     kayser_quadrature = xr.load_dataset(ddq_case)
@@ -151,19 +168,20 @@ for ddq_case in ddq_files:
     absorbers = {}
     band = ddq_case.split("_")[1][:2]  # Extract the band (LW or SW) from the filename
     case_name = ddq_case.split(".")[-2].split("/")[-1]
+
     # lines
     for sp in lines[band].keys():
         func_abs = train_fax(
             species=sp,
             arts_tag=lines[band][sp],
             frequency_grid=frequency_grid,
-            reference_cache_dir="../data/reference/" + case_name,
+            reference_cache_dir="../data/reference/" + case_name + suffix,
         )
         absorbers[sp] = func_abs
 
-    # halocarbons
+    # xfit
     from faxsec.xfit import CrossFitAbsorber
-
+    
     for sp in halocarbons[band].keys():
         func_abs = CrossFitAbsorber(
             species=sp,
@@ -237,6 +255,6 @@ for ddq_case in ddq_files:
 
     datatree["DDQ"] = ddq
 
-    datatree.to_netcdf(f"../data/ff/gas_optics_{case_name}.nc", mode="w")
+    datatree.to_netcdf(f"../data/ff/gas_optics_{case_name}_{suffix}.nc", mode="w")
 
 # %%
