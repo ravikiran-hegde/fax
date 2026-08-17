@@ -47,23 +47,18 @@ def transpose_rte_input(optical_props):
 def aggregate_fluxes(fluxes, band, keep_spectral=False):
     band = band.lower()
 
-    spectral_flux_up = fluxes[f"{band}_flux_up"]
-    spectral_flux_down = fluxes[f"{band}_flux_down"]
+    fluxes[f"{band}_spectral_flux_up"] = fluxes[f"{band}_flux_up"]
+    fluxes[f"{band}_spectral_flux_down"] = fluxes[f"{band}_flux_down"]
 
-    fluxes[f"{band}_flux_up"] = spectral_flux_up.sum("frequency")
-    fluxes[f"{band}_flux_down"] = spectral_flux_down.sum("frequency")
+    fluxes[f"{band}_flux_up"] = fluxes[f"{band}_spectral_flux_up"].sum("frequency")
+    fluxes[f"{band}_flux_down"] = fluxes[f"{band}_spectral_flux_down"].sum("frequency")
     fluxes[f"{band}_flux_net"] = fluxes[f"{band}_flux_down"] - fluxes[f"{band}_flux_up"]
 
-    if keep_spectral:
-        fluxes[f"{band}_spectral_flux_up"] = spectral_flux_up
-        fluxes[f"{band}_spectral_flux_down"] = spectral_flux_down
-    else:
+    if not keep_spectral:
         fluxes = fluxes.drop_vars(
             [f"{band}_spectral_flux_up", f"{band}_spectral_flux_down"],
             errors="ignore",
         )
-
-    return fluxes
 
 
 def add_net_flux(fluxes):
@@ -173,7 +168,7 @@ def do_ddq_example(file_path, band):
     # Solve RTE
     fluxes = optical_props.rte.solve(add_to_input=False)
 
-    fluxes = aggregate_fluxes(fluxes, band)
+    aggregate_fluxes(fluxes, band)
 
     if "profile_weight" in atm_ds:
         fluxes[f"global_{band}_surface_flux"] = (
