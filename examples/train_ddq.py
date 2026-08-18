@@ -13,20 +13,19 @@ from faxsec.utils import (
     reference_cache_path,
 )
 
-suffix = 'pres_pow5'
+suffix = "rndsmpl"
 
 sampling_kwargs = {
     # "p_range": [0.01, 110000],
     # "T_range": [120.0, 360.0],
-    "N_samples": 1000,
+    # "N_samples": 1000,
     # "seed": 42,
-    "method": "natural",
-    "pressure_power": 5.0,
+    # "method": "natural",
+    # "pressure_power": 5.0,
     # "n_p_strata": 10,
     # "n_T_strata": 10,
     # "samples_per_cell": 1,
 }
-
 
 
 def train_fax(
@@ -75,7 +74,8 @@ def train_fax(
                 cache_dir=reference_cache_dir,
             )
         ),
-        sampling_kwargs=sampling_kwargs
+        max_iter=10,
+        sampling_kwargs=sampling_kwargs,
     )
 
     return func_abs
@@ -156,7 +156,13 @@ continuum = {
 # ddq_files = [
 #     f"{ddq_loc}/DDQ_{band}_{i}.h5" for band in ["LW", "SW"] for i in range(1, 9)
 # ]
-ddq_files = [f"../data/ddq/DDQ_{band}.h5" for band in ["LW", "SW",]]
+ddq_files = [
+    f"../data/ddq/DDQ_{band}.h5"
+    for band in [
+        "LW",
+        "SW",
+    ]
+]
 
 for ddq_case in ddq_files:
     kayser_quadrature = xr.load_dataset(ddq_case)
@@ -181,7 +187,7 @@ for ddq_case in ddq_files:
 
     # xfit
     from faxsec.xfit import CrossFitAbsorber
-    
+
     for sp in halocarbons[band].keys():
         func_abs = CrossFitAbsorber(
             species=sp,
@@ -255,6 +261,6 @@ for ddq_case in ddq_files:
 
     datatree["DDQ"] = ddq
 
-    datatree.to_netcdf(f"../data/ff/gas_optics_{case_name}_{suffix}.nc", mode="w")
+    datatree.to_netcdf(f"../data/ff/gas_optics_{case_name}{suffix}.nc", mode="w")
 
 # %%

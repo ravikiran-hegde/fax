@@ -31,7 +31,7 @@ def get_gas_optics_bundle(band, suffix=""):
     #     if band == "sw"
     #     else "gas_optics_Highres_LW_100000.nc"
     # )
-    dt_name = f"gas_optics_DDQ_{band.upper()}_{suffix}.nc"
+    dt_name = f"gas_optics_DDQ_{band.upper()}{suffix}.nc"
     gas_optics_dt = xr.open_datatree(f"/Users/rk/Work/faxsec/data/ff/{dt_name}")
     return gas_optics_dt, GasOptics.from_datatree(gas_optics_dt)
 
@@ -241,7 +241,7 @@ def do_rrtgmp_example(
 
 
 # %% Run and save all examples
-suffix = "trange"
+suffix = "rndsmpl"
 for example in range(len(example_files)):
     ddq_fluxes_lw = do_ddq_example(example_files[example], "lw", suffix)
     ddq_fluxes_sw = do_ddq_example(example_files[example], "sw", suffix)
@@ -250,7 +250,7 @@ for example in range(len(example_files)):
     add_net_flux(ddq_fluxes)
 
     ddq_fluxes.to_netcdf(
-        f"/Users/rk/Work/faxsec/data/rte_examples/pyddq_fluxes_{example_files[example].split('/')[-1].split('-')[0]}_{suffix}.nc"
+        f"/Users/rk/Work/faxsec/data/rte_examples/pyddq_fluxes_{example_files[example].split('/')[-1].split('-')[0]}{suffix}.nc"
     )
 
 # for example in range(len(example_files)):

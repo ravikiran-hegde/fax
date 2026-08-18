@@ -44,6 +44,7 @@ class FunctionalConfig(AbsorberConfig):
     ref_pressure: float = REF_PRESSURE
     ref_temperature: float = REF_TEMPERATURE
     ref_vmr: float = REF_VMR
+    temperature_variable: str = "dT"  # "dT" or "T_ratio"
 
 
 @dataclass
@@ -69,6 +70,7 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
         ref_temperature: float = REF_TEMPERATURE,
         ref_vmr: float = REF_VMR,
         self_scaling: int | float = 0,
+        temperature_variable: str = "dT",
     ) -> None:
         pressure_form = functional_form_registry.get(pressure_form_name)
         temperature_form = functional_form_registry.get(temperature_form_name)
@@ -76,6 +78,11 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
             raise ValueError(f"Unknown pressure form: {pressure_form_name}")
         if temperature_form is None:
             raise ValueError(f"Unknown temperature form: {temperature_form_name}")
+        if temperature_variable not in ("dT", "T_ratio"):
+            raise ValueError(
+                f"Unknown temperature_variable: {temperature_variable}. "
+                "Use 'dT' or 'T_ratio'."
+            )
 
         self.pressure_form = pressure_form
         self.temperature_form = temperature_form
@@ -86,13 +93,16 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
             ref_vmr=ref_vmr,
             frequency_grid=frequency_grid,
             self_scaling=self_scaling,
+            temperature_variable=temperature_variable,
         )
         self.coeffs = FunctionalCoeffs()
 
         self.pressure_var = (
             staticmethod(lnp_withself) if self_scaling != 0 else staticmethod(lnp)
         )
-        self.temperature_var = staticmethod(dT)
+        self.temperature_var = staticmethod(
+            T_ratio if temperature_variable == "T_ratio" else dT
+        )
 
     def cross_section(
         self,
@@ -149,16 +159,13 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
 
             p_grid, t_grid = sample_atmospheres(**sampling_kwargs)
 
-            p_grid = (
-                np.append(p_grid, [self.config.ref_pressure])
-                if self.config.ref_pressure not in p_grid
-                else p_grid
+            has_ref_case = np.any(
+                np.isclose(p_grid, self.config.ref_pressure)
+                & np.isclose(t_grid, self.config.ref_temperature)
             )
-            t_grid = (
-                np.append(t_grid, [self.config.ref_temperature])
-                if self.config.ref_temperature not in t_grid
-                else t_grid
-            )
+            if not has_ref_case:
+                p_grid = np.append(p_grid, [self.config.ref_pressure])
+                t_grid = np.append(t_grid, [self.config.ref_temperature])
 
             reference_ds = calulate_arts_reference(
                 self.config.species,
@@ -222,14 +229,14 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
 
             rss = np.sum((reference_ds["norm_lnxsec"].values - p_pred - t_pred) ** 2)
 
+            self.coeffs.pressure_coeffs = p_coeffs
+            self.coeffs.temperature_coeffs = t_coeffs
+
             if iteration > 0 and (prev_rss - rss) / prev_rss < 1e-10:
                 break
             prev_rss = rss
 
-            self.coeffs.pressure_coeffs = p_coeffs
-            self.coeffs.temperature_coeffs = t_coeffs
-
-            return rss
+        return rss
 
     def to_dataset(self) -> xr.Dataset:
 
@@ -266,6 +273,7 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
             attrs={
                 "pressure_form": self.config.pressure_form_name,
                 "temperature_form": self.config.temperature_form_name,
+                "temperature_variable": self.config.temperature_variable,
                 "model_class": self.class_name,
             },
         )
@@ -283,6 +291,7 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
             ref_pressure=float(ds.ref_pressure.values),
             ref_temperature=float(ds.ref_temperature.values),
             ref_vmr=float(ds.ref_vmr.values),
+            temperature_variable=ds.attrs.get("temperature_variable", "dT"),
         )
         coeffs = FunctionalCoeffs(
             xsec0=ds.xsec0.values,
@@ -298,6 +307,7 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
             ref_temperature=config.ref_temperature,
             ref_vmr=config.ref_vmr,
             self_scaling=config.self_scaling,
+            temperature_variable=config.temperature_variable,
         )
         absorber.coeffs = coeffs
         return absorber
