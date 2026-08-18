@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,6 +12,8 @@ import numpy as np
 import xarray as xr
 from numpy.typing import ArrayLike
 from xarray import DataArray
+
+logger = logging.getLogger(__name__)
 
 ARRAYLIKE = ArrayLike | DataArray
 
@@ -131,23 +134,25 @@ class SavableModel(ABC):
 
     def save(self, path: Optional[str | Path] = None) -> None:
         """Save the model to disk."""
-        if path is None:
-            path = self.file_name
+        path = Path(path) if path is not None else Path(self.file_name)
         self.save_data(path)
         self.save_config(path)
+        logger.info("Saved %s (%s) to %s", self.config.species, self.class_name, path)
 
     def load(self, path: Optional[str | Path] = None) -> None:
         """Load the model from disk."""
-        if path is None:
-            path = self.file_name
+        path = Path(path) if path is not None else Path(self.file_name)
         self.load_data(path)
         self.load_config(path)
+        logger.info(
+            "Loaded %s (%s) from %s", self.config.species, self.class_name, path
+        )
 
     def save_config(self, path: str | Path) -> None:
         """Save the model configuration to disk."""
         config_path = Path(path) / f"{self.file_name}_config.json"
         with open(config_path, "w") as f:
-            f.write(json.dumps(dataclasses.asdict(self.config), indent=4))
+            f.write(json.dumps(dataclasses.asdict(self.config), indent=4, default=str))
 
     def load_config(self, path: str | Path) -> None:
         """Load the model configuration from disk and load into its config type."""

@@ -8,6 +8,7 @@ columns of variant 0 as a quick smoke test.
 
 from __future__ import annotations
 
+import logging
 import time
 from pathlib import Path
 
@@ -18,9 +19,12 @@ from pyrte_rrtmgp import rte
 from faxsec.arts import species_from_tag
 from faxsec.constants import AVOGADRO, GRAVITY, MEAN_MOLAR_MASS_AIR, MEAN_MOLAR_MASS_H2O
 from faxsec.gas_optics import GasOptics
+from faxsec.log_config import setup_logging
 from faxsec.utils import kayser_to_hz, planck_nu, rayleigh_xsec_stamnes_2017
 
 _ = rte  # keep import for accessor registration
+
+logger = logging.getLogger(__name__)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -280,6 +284,8 @@ def do_arts_fast_example(
 
 # %%
 if __name__ == "__main__":
+    setup_logging()
+
     output_dir = ROOT / "data/rte_examples"
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -290,26 +296,36 @@ if __name__ == "__main__":
     gas_optics_lw = build_gas_optics_for_band("LW", ddq_aux_lw["frequency"].values)
     gas_optics_sw = build_gas_optics_for_band("SW", ddq_aux_sw["frequency"].values)
     t_build1 = time.time()
-    print(f"Built gas optics (LW+SW) in {t_build1 - t_build0:.2f}s")
+    logger.info("Built gas optics (LW+SW) in %.2fs", t_build1 - t_build0)
 
     atm_ds = (
         xr.open_dataset(rfmip_file)
         .isel(variant=VARIANT, col=slice(0, N_COLUMNS))
     )
+    logger.info("Loaded %d RFMIP columns (variant %d)", N_COLUMNS, VARIANT)
 
     t0 = time.time()
     lw_fluxes = do_arts_fast_example(atm_ds, "lw", gas_optics_lw, ddq_aux_lw)
     sw_fluxes = do_arts_fast_example(atm_ds, "sw", gas_optics_sw, ddq_aux_sw)
     t1 = time.time()
-    print(f"Computed optical properties + RTE for {N_COLUMNS} columns in {t1 - t0:.2f}s")
+    logger.info(
+        "Computed optical properties + RTE for %d columns in %.2fs",
+        N_COLUMNS,
+        t1 - t0,
+    )
 
     fluxes = xr.merge([lw_fluxes, sw_fluxes], compat="equals", join="outer")
     add_net_flux(fluxes)
 
-    print(fluxes[["lw_flux_net", "sw_flux_net", "flux_net"]])
-    print("TOA net flux [W/m^2]:", fluxes["flux_net"].isel(level=0).values)
-    print("Surface net flux [W/m^2]:", fluxes["flux_net"].isel(level=-1).values)
+    logger.info(
+        "TOA net flux [W/m^2]: %s",
+        np.array2string(fluxes["flux_net"].isel(level=0).values),
+    )
+    logger.info(
+        "Surface net flux [W/m^2]: %s",
+        np.array2string(fluxes["flux_net"].isel(level=-1).values),
+    )
 
     output_path = output_dir / f"pyarts_fast_fluxes_rfmip_v{VARIANT:03d}.nc"
     fluxes.to_netcdf(output_path)
-    print(f"Saved {output_path}")
+    logger.info("Saved fluxes -> %s", output_path)

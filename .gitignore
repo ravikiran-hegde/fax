@@ -13,3 +13,4 @@ figures/
 *.nc
 *egg-info/
 *insights/
+.claude/

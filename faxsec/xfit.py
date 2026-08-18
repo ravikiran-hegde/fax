@@ -17,6 +17,9 @@ from faxsec.abstract_class import (
     SavableModel,
     SingleSpeciesModel,
 )
+from faxsec.constants import DATA_DIR
+
+DEFAULT_HALOCARBON_DATA = DATA_DIR / "halocarbon" / "CFC11-XFIT.xml"
 
 
 @dataclass
@@ -24,7 +27,7 @@ class CrossFitConfig(AbsorberConfig):
     """Configuration for the continuum absorber."""
 
     model: str = "XFIT"
-    data_source: Optional[str] = "../data/halocarbon/CFC11_XFIT.xml"
+    data_source: Optional[str | Path] = DEFAULT_HALOCARBON_DATA
 
 
 class CrossFitAbsorber(SingleSpeciesModel, SavableModel):
@@ -36,7 +39,7 @@ class CrossFitAbsorber(SingleSpeciesModel, SavableModel):
         self,
         species: str,
         frequency_grid: ARRAYLIKE,
-        data_source: Optional[str | xr.Dataset] = None,
+        data_source: Optional[str | Path | xr.Dataset] = None,
     ):
         if data_source is not None and isinstance(data_source, xr.Dataset):
             self._data = data_source
@@ -235,7 +238,7 @@ class CrossFitAbsorber(SingleSpeciesModel, SavableModel):
         data = data.expand_dims("species")
         data = data.drop_vars("band_id", errors="ignore")
         data.attrs["model"] = self.config.model
-        data.attrs["data_source"] = self.config.data_source
+        data.attrs["data_source"] = str(self.config.data_source)
         data.attrs["model_class"] = self.class_name
 
         # Interpolate the coeffs to the frequency grid
@@ -263,6 +266,7 @@ class CrossFitAbsorber(SingleSpeciesModel, SavableModel):
     def save_data(self, path: str | Path) -> None:
         """Save the model to disk."""
         self._data.attrs.update(vars(self.config))
+        self._data.attrs["data_source"] = str(self.config.data_source)
         self._data.to_netcdf(path)
 
     def load_data(self, path: str | Path) -> None:

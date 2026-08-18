@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -10,14 +11,16 @@ from pyrte_rrtmgp import rte
 from faxsec.arts import species_from_tag
 from faxsec.constants import AVOGADRO, GRAVITY, MEAN_MOLAR_MASS_AIR, MEAN_MOLAR_MASS_H2O
 from faxsec.gas_optics import GasOptics
+from faxsec.log_config import setup_logging
 from faxsec.utils import kayser_to_hz, planck_nu, rayleigh_xsec_stamnes_2017
 
 _ = rte  # keep import for accessor registration
 
+logger = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parents[1]
 
-example_dir = Path("../data/rte_examples/")
+example_dir = ROOT / "data" / "rte_examples"
 example_files = [
     example_dir / file
     for file in [
@@ -229,7 +232,20 @@ def do_arts_ddq_example_variant(
     gas_optics: GasOptics,
     ddq_aux: xr.Dataset,
 ) -> xr.Dataset:
-    atm_ds = prepare_atmosphere(atm_ds.load(), gas_optics.species)  
+    atm_ds = prepare_atmosphere(atm_ds.load(), gas_optics.species)
+
+    profile_dims = {
+        dim: size
+        for dim, size in atm_ds["temperature_layer"].sizes.items()
+        if dim != "layer"
+    }
+    logger.info(
+        "%s: %s profiles, %d layers each",
+        band.upper(),
+        profile_dims or 1,
+        atm_ds.sizes["layer"],
+    )
+
     flat_ds = atm_ds.stack(atm_points=list(atm_ds["temperature_layer"].dims))
 
     optical_props = (
@@ -310,15 +326,6 @@ def do_arts_ddq_example_variant(
     return fluxes
 
 
-ddq_aux_lw = load_ddq_aux_data("LW")
-ddq_aux_sw = load_ddq_aux_data("SW")
-
-gas_optics_lw = build_gas_optics_for_band("LW", ddq_aux_lw["frequency"].values)
-gas_optics_sw = build_gas_optics_for_band("SW", ddq_aux_sw["frequency"].values)
-
-output_dir = ROOT / "data/rte_examples"
-output_dir.mkdir(parents=True, exist_ok=True)
-
 # for file_path in example_files:
 #     atm_lazy = xr.open_dataset(file_path)  # lazy, no data pulled in yet
 #     variant_fluxes = []
@@ -341,21 +348,32 @@ output_dir.mkdir(parents=True, exist_ok=True)
 
 # run_variant.py
 import argparse
+
+setup_logging()
+
 p = argparse.ArgumentParser()
 p.add_argument("--file", type=str, required=True)
 p.add_argument("--variant", type=int, required=True)
 args = p.parse_args()
+
+output_dir = ROOT / "data/rte_examples"
+output_dir.mkdir(parents=True, exist_ok=True)
 
 ddq_aux_lw = load_ddq_aux_data("LW")
 ddq_aux_sw = load_ddq_aux_data("SW")
 gas_optics_lw = build_gas_optics_for_band("LW", ddq_aux_lw["frequency"].values)
 gas_optics_sw = build_gas_optics_for_band("SW", ddq_aux_sw["frequency"].values)
 
-file_path = example_dir/ args.file
+file_path = example_dir / args.file
 case = file_path.name.split("-")[0]
 atm_v = xr.open_dataset(file_path).isel(variant=args.variant)
+logger.info("Running variant %d of %s (%s)", args.variant, file_path.name, case)
+
 lw = do_arts_ddq_example_variant(atm_v, "lw", gas_optics_lw, ddq_aux_lw)
 sw = do_arts_ddq_example_variant(atm_v, "sw", gas_optics_sw, ddq_aux_sw)
 fluxes = xr.merge([lw, sw], compat="equals", join="outer")
 add_net_flux(fluxes)
-fluxes.to_netcdf(output_dir / f"pyarts_ddq_fluxes_{case}_v{args.variant:03d}.nc")
+
+output_path = output_dir / f"pyarts_ddq_fluxes_{case}_v{args.variant:03d}.nc"
+fluxes.to_netcdf(output_path)
+logger.info("Saved fluxes -> %s", output_path)

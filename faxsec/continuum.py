@@ -30,7 +30,7 @@ from typing import Optional
 import numpy as np
 import xarray as xr
 
-from faxsec.constants import CM_TO_M
+from faxsec.constants import CM_TO_M, DATA_DIR
 
 from .abstract_class import (
     ARRAYLIKE,
@@ -39,6 +39,8 @@ from .abstract_class import (
     SingleSpeciesModel,
 )
 
+DEFAULT_CONTINUUM_DATA = DATA_DIR / "continuum" / "absco-ref_wv-mt-ckd400.nc"
+
 
 @dataclass
 class ContinuumConfig(AbsorberConfig):
@@ -46,7 +48,7 @@ class ContinuumConfig(AbsorberConfig):
 
     continuum_type: str = ""  # self or foreign or both
     model: str = "MT_CKD_4.0"
-    data_source: Optional[str] = "./../data/continuum/absco-ref_wv-mt-ckd400.nc"
+    data_source: Optional[str | Path] = DEFAULT_CONTINUUM_DATA
 
 
 class ContinuumAbsorber(SingleSpeciesModel, SavableModel):
@@ -58,7 +60,7 @@ class ContinuumAbsorber(SingleSpeciesModel, SavableModel):
         species: str,
         continuum_type: str,
         frequency_grid: ARRAYLIKE,
-        data_source: Optional[str | xr.Dataset] = None,
+        data_source: Optional[str | Path | xr.Dataset] = None,
     ):
         self._required_data = ["ref_pres", "ref_temp"]
         if data_source is not None and isinstance(data_source, xr.Dataset):
@@ -165,7 +167,7 @@ class ContinuumAbsorber(SingleSpeciesModel, SavableModel):
         species_name = self.config.species
         continuum_ds.attrs["continuum_type"] = self.config.continuum_type
         continuum_ds.attrs["model"] = self.config.model
-        continuum_ds.attrs["data_source"] = self.config.data_source
+        continuum_ds.attrs["data_source"] = str(self.config.data_source)
         continuum_ds.attrs["model_class"] = self.class_name
 
         continuum_ds = continuum_ds.expand_dims("species").assign_coords(
@@ -182,6 +184,7 @@ class ContinuumAbsorber(SingleSpeciesModel, SavableModel):
     def save_data(self, path: str | Path) -> None:
         """Save the model to disk."""
         self._data.attrs.update(vars(self.config))
+        self._data.attrs["data_source"] = str(self.config.data_source)
         self._data.to_netcdf(path)
 
     def load_data(self, path: str | Path) -> None:
@@ -214,7 +217,7 @@ class H2OContinuum(ContinuumAbsorber):
     def __init__(
         self,
         frequency_grid: ARRAYLIKE,
-        data_source: Optional[str] = None,
+        data_source: Optional[str | Path] = DEFAULT_CONTINUUM_DATA,
         **_ignored,  # for uniform api for class methods.
     ):
         self._self_continuum = SelfContinuumAbsorber(
@@ -259,7 +262,7 @@ class SelfContinuumAbsorber(ContinuumAbsorber):
         self,
         species: str,
         frequency_grid: ARRAYLIKE,
-        data_source: Optional[str] = None,
+        data_source: Optional[str | Path] = DEFAULT_CONTINUUM_DATA,
     ):
 
         self._required_data = [
@@ -321,7 +324,7 @@ class ForeignContinuumAbsorber(ContinuumAbsorber):
         self,
         species: str,
         frequency_grid: ARRAYLIKE,
-        data_source: Optional[str | xr.Dataset] = None,
+        data_source: Optional[str | Path | xr.Dataset] = DEFAULT_CONTINUUM_DATA,
     ):
         self._required_data = ["ref_pressure", "ref_temperature", "for_absco_ref"]
 

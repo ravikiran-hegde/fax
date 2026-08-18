@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any, Optional, Sequence, Tuple
 
@@ -9,6 +10,7 @@ from numpy.typing import ArrayLike
 
 from faxsec.constants import (
     BOLTZMANN,
+    DATA_DIR,
     DEFAULT_VMR,
     LIGHT_SPEED,
     PLANCK,
@@ -18,6 +20,8 @@ from faxsec.constants import (
 )
 
 from .constants import KAYSER_TO_HZ
+
+logger = logging.getLogger(__name__)
 
 
 def kayser_to_hz(kaysers):
@@ -163,7 +167,7 @@ def _slugify(value: Any) -> str:
 def reference_cache_path(
     species: str,
     arts_tag: tuple[str, ...] | None = None,
-    cache_dir: str | Path = "./data/reference_cache",
+    cache_dir: str | Path = DATA_DIR / "reference_cache",
 ) -> Path:
     """Return the on-disk cache path for a reference dataset."""
 
@@ -191,7 +195,10 @@ def ensure_reference_dataset(
     cache_path = Path(cache_path)
 
     if cache_path.exists() and not force:
+        logger.debug("Using cached ARTS reference for %s: %s", species, cache_path)
         return cache_path
+
+    logger.info("Computing ARTS reference for %s (tags=%s)", species, arts_tag)
 
     sampling_kwargs = {} if sampling_kwargs is None else dict(sampling_kwargs)
     arts_reference_kwargs = (
@@ -219,6 +226,12 @@ def ensure_reference_dataset(
 
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     reference_ds.to_netcdf(cache_path)
+    logger.info(
+        "Cached ARTS reference for %s: %d cases -> %s",
+        species,
+        reference_ds.sizes.get("case", 0),
+        cache_path,
+    )
 
     return cache_path
 

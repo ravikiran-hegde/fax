@@ -9,6 +9,7 @@ evaluated online with ARTS through ``ARTSAbsorber`` and ``GasOptics``.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -18,9 +19,12 @@ from pyrte_rrtmgp import rte
 from faxsec.arts import species_from_tag
 from faxsec.constants import AVOGADRO, GRAVITY, MEAN_MOLAR_MASS_AIR, MEAN_MOLAR_MASS_H2O
 from faxsec.gas_optics import GasOptics
+from faxsec.log_config import setup_logging
 from faxsec.utils import kayser_to_hz, planck_nu, rayleigh_xsec_stamnes_2017
 
 _ = rte  # keep import for accessor registration
+
+logger = logging.getLogger(__name__)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -241,6 +245,19 @@ def do_arts_ddq_example(
     band = band.lower()
     atm_ds = prepare_atmosphere(xr.load_dataset(file_path), gas_optics.species)
 
+    profile_dims = {
+        dim: size
+        for dim, size in atm_ds["temperature_layer"].sizes.items()
+        if dim != "layer"
+    }
+    logger.info(
+        "%s %s: %s profiles, %d layers each",
+        file_path.name,
+        band.upper(),
+        profile_dims or 1,
+        atm_ds.sizes["layer"],
+    )
+
     flat_ds = atm_ds.stack(atm_points=list(atm_ds["temperature_layer"].dims))
 
     optical_props = (
@@ -323,6 +340,8 @@ def do_arts_ddq_example(
 
 # %%
 # def run_all_examples() -> None:
+setup_logging()
+
 ddq_aux_lw = load_ddq_aux_data("LW")
 ddq_aux_sw = load_ddq_aux_data("SW")
 
@@ -342,7 +361,7 @@ for file_path in example_files:
     case = file_path.name.split("-")[0]
     output_path = output_dir / f"pyarts_ddq_fluxes_{case}.nc"
     fluxes.to_netcdf(output_path)
-    print(f"Saved {output_path}")
+    logger.info("Saved fluxes -> %s", output_path)
 
 # for file_path in example_files:
 #     band = "sw"

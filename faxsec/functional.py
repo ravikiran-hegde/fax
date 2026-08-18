@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -15,6 +16,8 @@ from faxsec.abstract_class import (
 )
 from faxsec.constants import REF_PRESSURE, REF_TEMPERATURE, REF_VMR
 from faxsec.forms import FunctionalForm, functional_form_registry
+
+logger = logging.getLogger(__name__)
 
 
 def lnp(p, ref_pressure, **_ignored):
@@ -136,7 +139,7 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
 
     def train(
         self,
-        reference_xsec: Optional[str] = None,
+        reference_xsec: Optional[str | Path] = None,
         max_iter: int = 4,
         **training_kwargs,
     ) -> None:
@@ -213,6 +216,16 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
 
         prev_rss = np.inf
 
+        logger.info(
+            "Training %s (%s x %s, self_scaling=%s): %d reference cases, max_iter=%d",
+            self.config.species,
+            self.config.pressure_form_name,
+            self.config.temperature_form_name,
+            self.config.self_scaling,
+            reference_ds.sizes.get("case", 0),
+            max_iter,
+        )
+
         for iteration in range(max_iter):
 
             # Fit T given P (lnxsec - P_effect ~ T_effect)
@@ -232,9 +245,16 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
             self.coeffs.pressure_coeffs = p_coeffs
             self.coeffs.temperature_coeffs = t_coeffs
 
+            logger.debug("  iter %d/%d: rss=%.6g", iteration + 1, max_iter, rss)
+
             if iteration > 0 and (prev_rss - rss) / prev_rss < 1e-10:
+                logger.info(
+                    "Converged after %d iterations (rss=%.6g)", iteration + 1, rss
+                )
                 break
             prev_rss = rss
+        else:
+            logger.info("Reached max_iter=%d (rss=%.6g)", max_iter, rss)
 
         return rss
 

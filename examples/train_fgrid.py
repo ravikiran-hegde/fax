@@ -1,4 +1,5 @@
 # %%
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -6,12 +7,19 @@ import xarray as xr
 
 from faxsec.constants import SELF_SCALING
 from faxsec.functional import FunctionalAbsorber
+from faxsec.log_config import setup_logging
 from faxsec.utils import (
     ensure_reference_dataset,
     kayser_to_hz,
     rayleigh_xsec_stamnes_2017,
     reference_cache_path,
 )
+
+setup_logging()
+logger = logging.getLogger(__name__)
+
+ROOT = Path(__file__).resolve().parents[1]
+DATA_DIR = ROOT / "data"
 
 
 def train_fax(
@@ -52,12 +60,10 @@ def train_fax(
     )
 
     func_abs.train(
-        reference_xsec=str(
-            reference_cache_path(
-                species=species,
-                arts_tag=arts_tag,
-                cache_dir=reference_cache_dir,
-            )
+        reference_xsec=reference_cache_path(
+            species=species,
+            arts_tag=arts_tag,
+            cache_dir=reference_cache_dir,
         )
     )
 
@@ -161,13 +167,21 @@ for case_name, kayser_grid in train_cases.items():
 
     absorbers = {}
     band = case_name.split("_")[1][:2]  # Extract the band (LW or SW) from the case name
+
+    logger.info(
+        "Training gas optics for %s (band=%s): %d frequency points",
+        case_name,
+        band,
+        frequency_grid.size,
+    )
+
     # lines
     for sp in lines[band].keys():
         func_abs = train_fax(
             species=sp,
             arts_tag=lines[band][sp],
             frequency_grid=frequency_grid,
-            reference_cache_dir="../data/reference/" + case_name,
+            reference_cache_dir=DATA_DIR / "reference" / case_name,
         )
         absorbers[sp] = func_abs
 
@@ -178,7 +192,7 @@ for case_name, kayser_grid in train_cases.items():
         func_abs = CrossFitAbsorber(
             species=sp,
             frequency_grid=frequency_grid,
-            data_source=f"../data/halocarbon/{sp.split('-')[0]}-XFIT.xml",
+            data_source=DATA_DIR / "halocarbon" / f"{sp.split('-')[0]}-XFIT.xml",
         )
         absorbers[sp] = func_abs
 
@@ -188,7 +202,7 @@ for case_name, kayser_grid in train_cases.items():
     for sp in continuum.keys():
         absorbers[f"{sp}_continuum"] = H2OContinuum(
             frequency_grid=frequency_grid,
-            data_source="../data/continuum/absco-ref_wv-mt-ckd400.nc",
+            data_source=DATA_DIR / "continuum" / "absco-ref_wv-mt-ckd400.nc",
         )
 
     # quadrature related data
@@ -201,10 +215,10 @@ for case_name, kayser_grid in train_cases.items():
         import pyarts3
 
         # solar source
-        solar_source_file = Path("../data/solar_spectra/solar_spectrum_July_2008.xml")
+        solar_source_file = DATA_DIR / "solar_spectra" / "solar_spectrum_July_2008.xml"
         solar_source = (
             pyarts3.xml.load(
-                solar_source_file,
+                str(solar_source_file),
             )
             .to_xarray()
             .rename({"Frequencys": "frequency"})
@@ -223,9 +237,7 @@ for case_name, kayser_grid in train_cases.items():
                 x=solar_source.frequency.values,
             )
         )
-        other["spectral_solar_irradiance"].attrs[
-            "source"
-        ] = "../data/solar_spectra/solar_spectrum_July_2008.xml"
+        other["spectral_solar_irradiance"].attrs["source"] = str(solar_source_file)
 
         # rayleigh scattering cross-section
         rayleigh_xsec = rayleigh_xsec_stamnes_2017(frequency_grid)
@@ -250,6 +262,8 @@ for case_name, kayser_grid in train_cases.items():
 
     datatree["Other"] = other
 
-    datatree.to_netcdf(f"../data/ff/gas_optics_{case_name}.nc", mode="w")
+    output_path = DATA_DIR / "ff" / f"gas_optics_{case_name}.nc"
+    datatree.to_netcdf(output_path, mode="w")
+    logger.info("Saved %s: %d absorbers -> %s", case_name, len(absorbers), output_path)
 
 # %%

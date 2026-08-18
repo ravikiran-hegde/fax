@@ -1,4 +1,5 @@
 # %%
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -6,12 +7,19 @@ import xarray as xr
 
 from faxsec.constants import SELF_SCALING
 from faxsec.functional import FunctionalAbsorber
+from faxsec.log_config import setup_logging
 from faxsec.utils import (
     ensure_reference_dataset,
     kayser_to_hz,
     rayleigh_xsec_stamnes_2017,
     reference_cache_path,
 )
+
+setup_logging()
+logger = logging.getLogger(__name__)
+
+ROOT = Path(__file__).resolve().parents[1]
+DATA_DIR = ROOT / "data"
 
 suffix = "rndsmpl"
 
@@ -67,12 +75,10 @@ def train_fax(
     )
 
     func_abs.train(
-        reference_xsec=str(
-            reference_cache_path(
-                species=species,
-                arts_tag=arts_tag,
-                cache_dir=reference_cache_dir,
-            )
+        reference_xsec=reference_cache_path(
+            species=species,
+            arts_tag=arts_tag,
+            cache_dir=reference_cache_dir,
         ),
         max_iter=10,
         sampling_kwargs=sampling_kwargs,
@@ -152,28 +158,31 @@ continuum = {
     ),
 }
 
-# ddq_loc = "../data/ddq/Additional configurations"
+# ddq_loc = DATA_DIR / "ddq" / "Additional configurations"
 # ddq_files = [
-#     f"{ddq_loc}/DDQ_{band}_{i}.h5" for band in ["LW", "SW"] for i in range(1, 9)
+#     ddq_loc / f"DDQ_{band}_{i}.h5" for band in ["LW", "SW"] for i in range(1, 9)
 # ]
-ddq_files = [
-    f"../data/ddq/DDQ_{band}.h5"
-    for band in [
-        "LW",
-        "SW",
-    ]
-]
+ddq_files = [DATA_DIR / "ddq" / f"DDQ_{band}.h5" for band in ["LW", "SW"]]
 
 for ddq_case in ddq_files:
+    case_name = ddq_case.stem  # e.g. "DDQ_LW"
+    band = case_name.split("_")[1][:2]  # Extract the band (LW or SW) from the filename
+
     kayser_quadrature = xr.load_dataset(ddq_case)
     kayser_grid = kayser_quadrature["S"].values
     kayser_weights = kayser_quadrature["W"].values
     frequency_grid = kayser_to_hz(kayser_grid)
     weights_hz = kayser_to_hz(kayser_weights)
 
+    logger.info(
+        "Training gas optics for %s (band=%s): %d frequency points",
+        case_name,
+        band,
+        frequency_grid.size,
+    )
+
     absorbers = {}
-    band = ddq_case.split("_")[1][:2]  # Extract the band (LW or SW) from the filename
-    case_name = ddq_case.split(".")[-2].split("/")[-1]
+    reference_cache_dir = DATA_DIR / "reference" / f"{case_name}{suffix}"
 
     # lines
     for sp in lines[band].keys():
@@ -181,7 +190,7 @@ for ddq_case in ddq_files:
             species=sp,
             arts_tag=lines[band][sp],
             frequency_grid=frequency_grid,
-            reference_cache_dir="../data/reference/" + case_name + suffix,
+            reference_cache_dir=reference_cache_dir,
         )
         absorbers[sp] = func_abs
 
@@ -192,7 +201,7 @@ for ddq_case in ddq_files:
         func_abs = CrossFitAbsorber(
             species=sp,
             frequency_grid=frequency_grid,
-            data_source=f"../data/halocarbon/{sp.split('-')[0]}-XFIT.xml",
+            data_source=DATA_DIR / "halocarbon" / f"{sp.split('-')[0]}-XFIT.xml",
         )
         absorbers[sp] = func_abs
 
@@ -200,9 +209,10 @@ for ddq_case in ddq_files:
     from faxsec.continuum import H2OContinuum
 
     for sp in continuum.keys():
+        # 430 introduces bias
         absorbers[f"{sp}_continuum"] = H2OContinuum(
             frequency_grid=frequency_grid,
-            data_source="../data/continuum/absco-ref_wv-mt-ckd400.nc",  # 430 introduuces bias
+            data_source=DATA_DIR / "continuum" / "absco-ref_wv-mt-ckd400.nc",
         )
 
     # quadrature related data
@@ -215,10 +225,10 @@ for ddq_case in ddq_files:
         import pyarts3
 
         # solar source
-        solar_source_file = Path("../data/solar_spectra/solar_spectrum_July_2008.xml")
+        solar_source_file = DATA_DIR / "solar_spectra" / "solar_spectrum_July_2008.xml"
         solar_source = (
             pyarts3.xml.load(
-                solar_source_file,
+                str(solar_source_file),
             )
             .to_xarray()
             .rename({"Frequencys": "frequency"})
@@ -234,9 +244,7 @@ for ddq_case in ddq_files:
             * solar_source["spectral_solar_radiance"]
             / np.dot(solar_source["spectral_solar_radiance"].values, weights_hz)
         )
-        ddq["spectral_solar_irradiance"].attrs[
-            "source"
-        ] = "../data/solar_spectra/solar_spectrum_July_2008.xml"
+        ddq["spectral_solar_irradiance"].attrs["source"] = str(solar_source_file)
 
         # rayleigh scattering cross-section
         ddq_rayleigh = rayleigh_xsec_stamnes_2017(frequency_grid)
@@ -261,6 +269,8 @@ for ddq_case in ddq_files:
 
     datatree["DDQ"] = ddq
 
-    datatree.to_netcdf(f"../data/ff/gas_optics_{case_name}{suffix}.nc", mode="w")
+    output_path = DATA_DIR / "ff" / f"gas_optics_{case_name}{suffix}.nc"
+    datatree.to_netcdf(output_path, mode="w")
+    logger.info("Saved %s: %d absorbers -> %s", case_name, len(absorbers), output_path)
 
 # %%
