@@ -29,9 +29,9 @@ example_dir = Path("../data/rte_examples/")
 example_files = [
     example_dir / file
     for file in [
-        "ckdmip-states.nc",
-        "rce-states.nc",
-        # "rfmip-states.nc",
+        # "ckdmip-states.nc",
+        # "rce-states.nc",
+        "rfmip-states.nc",
     ]
 ]
 
