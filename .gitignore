@@ -12,3 +12,4 @@ figures/
 *.npz
 *.nc
 *egg-info/
+*insights/
