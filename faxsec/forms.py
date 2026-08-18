@@ -373,6 +373,58 @@ class RationalForm(FunctionalForm):
         ]
 
 
+class PowerLawForm(FunctionalForm):
+    """Power law form: c0 * x^c1 + c2."""
+
+    def evaluate(self, x: np.ndarray, coeffs: np.ndarray) -> np.ndarray:
+        x_safe = np.maximum(np.ravel(x), 1e-12)[:, None]  # avoid power of zero/negative
+        c0, c1, c2 = coeffs[0], coeffs[1], coeffs[2]
+        return c0 * (x_safe**c1) + c2
+
+    def fit(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        from scipy.optimize import least_squares
+
+        x_safe = np.maximum(np.ravel(x), 1e-12)
+        n_freq = y.shape[1]
+        coeffs = np.zeros((3, n_freq))
+
+        logger.info("Fitting PowerLaw model...")
+        for fi in range(n_freq):
+            y_col = y[:, fi]
+            if not np.all(np.isfinite(y_col)):
+                continue
+
+            y_min = np.min(y_col)
+            y_shift = y_col - y_min + 1e-3
+            try:
+                p_init = np.polyfit(np.log(x_safe), np.log(y_shift), 1)
+                c1_init = p_init[0]
+                c0_init = np.exp(p_init[1])
+            except Exception:
+                c1_init, c0_init = 1.0, 1e-3
+
+            x0 = [c0_init, c1_init, y_min]
+
+            def residual(p):
+                return (p[0] * (x_safe**p[1]) + p[2]) - y_col
+
+            try:
+                result = least_squares(residual, x0, loss="soft_l1")
+                p_opt = result.x
+            except Exception:
+                p_opt = x0
+
+            coeffs[:, fi] = p_opt
+
+            if fi % max(1, n_freq // 10) == 0:
+                logger.debug("  PowerLaw fit progress: %d/%d", fi + 1, n_freq)
+
+        return coeffs
+
+    def coefficient_names(self) -> List[str]:
+        return ["c0", "c1", "c2"]
+
+
 class NullForm(FunctionalForm):
     """A null form that evaluates to explicitly 0.0 with no fitting variables."""
 
@@ -396,5 +448,6 @@ functional_form_registry: dict[str, FunctionalForm] = {
     "Hinge": HingeForm(),
     "SmoothHinge": SmoothHingeForm(),
     "Rational": RationalForm(),
+    "Powerlaw": PowerLawForm(),
     "Null": NullForm(),
 }
