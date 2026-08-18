@@ -1,8 +1,7 @@
 """ARTS-backed absorption adapter with the fastabs API.
 
-This class allows using pyarts SingleSpeciesAbsorption within the same
-`calculate_absorption` interface as the fast models, enabling drop-in
-comparisons and RT runs.
+This class allows using pyarts within the same `calculate_absorption`
+interface as the fast models, enabling drop-in comparisons and RT runs.
 """
 
 from __future__ import annotations
@@ -40,7 +39,9 @@ class ARTSConfig(AbsorberConfig):
 class ARTSAbsorber(SingleSpeciesModel):
     """Adapter to provide calculate_absorption like fast models using ARTS.
 
-    It uses pyarts SingleSpeciesAbsorption internally for each species tag.
+    Builds one Workspace per absorption tag and evaluates the whole stack of
+    atmospheric points in a single ``spectral_propmat_pathFromPath`` call per
+    tag, instead of looping point-by-point in Python.
     """
 
     config: ARTSConfig
@@ -58,10 +59,11 @@ class ARTSAbsorber(SingleSpeciesModel):
             arts_tag=arts_tag,
         )
 
-        import pyarts3
+        pyarts.data.download(version=PYARTS_VERSION)
 
-        pyarts3.data.download(version=PYARTS_VERSION)
-
+        self._freq_grid = pyarts.arts.AscendingGrid(
+            np.asarray(self.config.frequency_grid, dtype=float)
+        )
         self._absorbers = self._create_absorbers(
             self.config.arts_tag, self.config.cutoff_hz
         )
@@ -71,13 +73,44 @@ class ARTSAbsorber(SingleSpeciesModel):
         absorption_tags: Sequence[str],
         cutoff_hz: Optional[float],
     ):
-        """Factory for underlying ARTS absorbers."""
-        from pyarts3.recipe import SingleSpeciesAbsorption
+        """Factory for underlying ARTS Workspaces, one per tag."""
+        absorbers = {}
+        for tag in absorption_tags:
+            ws = pyarts.Workspace()
+            ws.WignerInit()
+            ws.abs_speciesSet(species=[tag])
+            ws.ReadCatalogData()
+            if cutoff_hz is not None:
+                for band in ws.abs_bands:
+                    ws.abs_bands[band].cutoff = "ByLine"
+                    ws.abs_bands[band].cutoff_value = cutoff_hz
+            # ignore_errors turns e.g. a CIA temperature out of table range
+            # into NaN for that point instead of raising; nan_to_num below
+            # then floors it, same as skipping that point.
+            ws.spectral_propmat_agendaAuto(ignore_errors=1)
+            ws.jac_targetsOff()
+            absorbers[tag] = ws
+        return absorbers
 
-        return {
-            t: SingleSpeciesAbsorption(species=t, cutoff=cutoff_hz)
-            for t in absorption_tags
-        }
+    def _propmat_path(self, ws, tag: str, atm_path, F: int) -> np.ndarray:
+        """Propagation matrix for a stack of atm points in one ARTS call."""
+        N = len(atm_path)
+        ray_path = pyarts.arts.ArrayOfPropagationPathPoint(
+            [pyarts.arts.PropagationPathPoint()] * N
+        )
+        freq_grid_path = pyarts.arts.ArrayOfAscendingGrid([self._freq_grid] * N)
+        ws.freq_wind_shift_jac_path = pyarts.arts.ArrayOfVector3(np.zeros((N, 3)))
+
+        try:
+            ws.spectral_propmat_pathFromPath(
+                atm_path=atm_path,
+                ray_path=ray_path,
+                freq_grid_path=freq_grid_path,
+            )
+            return np.array([1.0 * v[:, 0] for v in ws.spectral_propmat_path])
+        except Exception as e:
+            print(f"Error calculating cross-section for tag {tag}: {e}")
+            return np.zeros((N, F))
 
     def cross_section(
         self,
@@ -93,42 +126,41 @@ class ARTSAbsorber(SingleSpeciesModel):
             Cross-section array (level, frequency) in m^2
         """
         print("Calculating ARTS cross-sections with tags", self.config.arts_tag)
+        pressure = np.asarray(pressure, dtype=float)
+        temperature = np.asarray(temperature, dtype=float)
+        vmr = np.asarray(vmr, dtype=float)
         N = pressure.size
         F = len(self.config.frequency_grid)
-        S = len(self.config.arts_tag)
+
+        vmr_arts = (
+            vmr if self.config.use_self_broadening else np.full(N, self.config.vmr0)
+        )
+
+        atm_data = {
+            "p": pyarts.arts.Vector(pressure),
+            "t": pyarts.arts.Vector(temperature),
+        }
+        # set default VMRs for other species in the atmosphere; needed for some CIA in SW
+        for sp, default_vmr in DEFAULT_VMR.items():
+            if sp != self.config.species:
+                atm_data[sp] = pyarts.arts.Vector(np.full(N, default_vmr))
+        atm_data[self.config.species] = pyarts.arts.Vector(vmr_arts)
+        atm_path = pyarts.arts.ArrayOfAtmPoint.from_dict(atm_data)
+
+        number_density = np.array(
+            [p.number_density(self.config.species) for p in atm_path]
+        )
+        safe_density = np.where(number_density > 0, number_density, 1.0)
+
         xsec_stack = np.zeros((N, F))
+        for tag, ws in self._absorbers.items():
+            propmat = self._propmat_path(ws, tag, atm_path, F)
+            xsec = propmat / safe_density[:, None]
+            xsec = np.nan_to_num(xsec, nan=EPS, posinf=EPS, neginf=EPS)
+            xsec = np.clip(xsec, EPS, 1e10)
+            xsec_stack += xsec
 
-        atm = pyarts.arts.AtmPoint()
-        for i in range(N):
-            atm.pressure = float(pressure[i])
-            atm.temperature = float(temperature[i])
-
-            vmr_arts = (
-                float(vmr[i]) if self.config.use_self_broadening else self.config.vmr0
-            )
-            if vmr_arts == 0.0:
-                continue
-
-            # set default VMRs for other species in the atmosphere; needed foir some CIA in SW
-            for sp in DEFAULT_VMR:
-                if sp != self.config.species:
-                    atm[sp] = DEFAULT_VMR[sp]
-
-            atm[self.config.species] = vmr_arts
-
-            for tag in self.config.arts_tag:
-
-                try:
-                    xsec = self._absorbers[tag](
-                        self.config.frequency_grid, atm
-                    ) / atm.number_density(self.config.species)
-                except Exception as e:
-                    print(f"Error calculating cross-section for tag {tag}: {e}")
-                    xsec = np.zeros(F)
-
-                xsec = np.nan_to_num(xsec, nan=EPS, posinf=EPS, neginf=EPS)
-                xsec = np.clip(xsec, EPS, 1e10)
-                xsec_stack[i, :] += xsec
+        xsec_stack[vmr_arts == 0.0, :] = 0.0
 
         return xsec_stack
 
