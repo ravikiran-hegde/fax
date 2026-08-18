@@ -31,8 +31,8 @@ arts_absorbers["H2O_continuum"] = ARTSAbsorber(
     species="H2O",
     frequency_grid=frequency_grid,
     arts_tag=(
-        "H2O-ForeignContCKDMT430",
-        "H2O-SelfContCKDMT430",
+        "H2O-ForeignContCKDMT350",
+        "H2O-SelfContCKDMT350",
     ),
 )
 
@@ -53,10 +53,11 @@ for sp in DEFAULT_VMR:
 import matplotlib.pyplot as plt
 import numpy as np
 
+0.5
 p = np.array([5e4, 1000e2, 1e2])
 t = np.array([150, 273, 300])
 
-p = [10]
+p = [500e2]
 t = [230.8]
 
 
@@ -77,13 +78,18 @@ for i in range(len(p)):
         pr = np.array([p[i]])
         tmp = np.array([t[i]])
         vmr = np.array([v[i]])
-        xsec = absorbers[sp].cross_section(pr, tmp, vmr) * atm.number_density("H2O")
+        xsec = absorbers[sp].cross_section(pr, tmp, vmr)  # * atm.number_density("H2O")
         xsec_arts = (
             arts_absorbers[sp].cross_section(pr, tmp, vmr)
             if sp in arts_absorbers
             else np.zeros_like(xsec) * np.nan
-        ) * atm.number_density("H2O")
+        )  # * atm.number_density("H2O")
 
+        # clip to nan if less than 1e-50
+        xsec[xsec < 1e-50] = np.nan
+        xsec_arts[xsec_arts < 1e-50] = np.nan
+
+        weights = kayser_weights / 2
         abs = cont(frequency_grid, atm)
         ax[0].plot(
             kayser_grid,
@@ -92,14 +98,10 @@ for i in range(len(p)):
             ls="--",
             lw=0.001,
             marker="x",
+            label="v3.5",
         )
 
-        ax[0].scatter(
-            kayser_grid,
-            xsec[0],
-            s=kayser_weights / 2,
-            alpha=0.5,
-        )
+        ax[0].scatter(kayser_grid, xsec[0], s=weights, alpha=0.5, label="v4.3")
         # ax[0].scatter(
         #     kayser_grid,
         #     abs,
@@ -111,20 +113,24 @@ for i in range(len(p)):
         ax[1].scatter(
             kayser_grid,
             # (xsec[0] - xsec_arts[0]) * 100 / xsec_arts[0],
-            np.log10(xsec[0] / xsec_arts[0]),
-            label=sp,
+            # np.log10(
+            (xsec[0] / xsec_arts[0]),
+            # label=sp,
             alpha=0.5,
-            s=kayser_weights / 2,
+            s=weights,
         )
 
-    ax[0].set_ylabel("Cross-section (m²)")
+    ax[0].set_ylabel("Cross-section / m²")
     ax[0].set_yscale("log")
-    # ax[0].set_ylim(1e-30, None)
-    # ax[0].legend(markerscale=1)
+    # ax[0].set_xscale("log")
+    # ax[0].set_ylim(1e-32, 1e-20)
+    ax[0].legend(markerscale=0.5)
 
-    ax[1].legend()
-    ax[1].set_xlabel("Frequency (cm⁻¹)")
-    ax[1].set_ylabel("Log10 ratio (model / ARTS)")
+    # ax[1].legend()
+    plt.axhline(1, color="k", ls="--", lw=0.5)
+    ax[1].set_xlabel("Frequency / cm⁻¹")
+    ax[1].set_ylabel("v4.3 / v3.5")
+    # ax[1].set_ylim(0.1, 4)
 
     # ax[1].set_yscale("log", base=10)
     plt.suptitle(f"Pressure: {p[i]:.2e} Pa, Temperature: {t[i]:.1f} K")
