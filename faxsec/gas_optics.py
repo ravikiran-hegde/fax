@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from typing import Dict, Tuple, Type
 
@@ -10,6 +11,8 @@ from faxsec.constants import BOLTZMANN
 from faxsec.continuum import H2OContinuum
 from faxsec.functional import FunctionalAbsorber
 from faxsec.xfit import CrossFitAbsorber
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -42,6 +45,7 @@ class GasOptics:
         gas_optics = cls(species=species, frequency_grid=frequency_grid)
         gas_optics._absorbers = absorbers
         gas_optics.validate()
+        gas_optics._log_summary()
         return gas_optics
 
     @classmethod
@@ -70,7 +74,9 @@ class GasOptics:
         for class_name in dt.keys():
             absorber_cls = absorber_registry.get(class_name, None)
             if absorber_cls is None:
-                print(f"Unsupported faxsec class {class_name} in datatree. Skipping.")
+                logger.warning(
+                    "Unsupported faxsec class %r in datatree, skipping.", class_name
+                )
             else:
                 ds = dt[class_name]
                 for sp in ds.species.values:
@@ -88,7 +94,8 @@ class GasOptics:
             self.species
         )  # Update species list to include new absorber
         self.validate()
-        print(f"Updated absrobers: {list(self._absorbers.keys())}")
+        key = f"{absorber.config.species}_{absorber.class_name}"
+        logger.info("Added absorber %r", key)
 
     def validate(self) -> None:
         """Validate the configuration of the gas optics model."""
@@ -111,6 +118,24 @@ class GasOptics:
                     f"Species {absorber.config.species} of absorber {absorber} "
                     f"is not in the configured species list {self.config.species}."
                 )
+
+    def _log_summary(self) -> None:
+        """Log a brief overview of which models and species are loaded."""
+        by_class: Dict[str, list] = {}
+        for absorber in self._absorbers.values():
+            by_class.setdefault(absorber.class_name, []).append(
+                str(absorber.config.species)
+            )
+        models = "; ".join(
+            f"{class_name}({', '.join(species)})"
+            for class_name, species in by_class.items()
+        )
+        logger.info(
+            "GasOptics ready: %d species, %d absorbers -- %s",
+            len(self.species),
+            len(self._absorbers),
+            models,
+        )
 
     @staticmethod
     def _decode_species(species: str):

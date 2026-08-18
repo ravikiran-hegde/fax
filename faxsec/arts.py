@@ -6,6 +6,7 @@ interface as the fast models, enabling drop-in comparisons and RT runs.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
@@ -14,6 +15,8 @@ import pyarts3 as pyarts
 
 from faxsec.abstract_class import ARRAYLIKE, AbsorberConfig, SingleSpeciesModel
 from faxsec.constants import DEFAULT_VMR, EPS, REF_VMR
+
+logger = logging.getLogger(__name__)
 
 LINE_CUTOFF_HZ = 750e9
 PYARTS_VERSION = "3.0.0dev10"
@@ -67,6 +70,12 @@ class ARTSAbsorber(SingleSpeciesModel):
         self._absorbers = self._create_absorbers(
             self.config.arts_tag, self.config.cutoff_hz
         )
+        logger.debug(
+            "ARTSAbsorber(%s) ready: tags=%s, %d frequency points",
+            species,
+            self.config.arts_tag,
+            len(self.config.frequency_grid),
+        )
 
     def _create_absorbers(
         self,
@@ -109,7 +118,7 @@ class ARTSAbsorber(SingleSpeciesModel):
             )
             return np.array([1.0 * v[:, 0] for v in ws.spectral_propmat_path])
         except Exception as e:
-            print(f"Error calculating cross-section for tag {tag}: {e}")
+            logger.warning("Error calculating cross-section for tag %s: %s", tag, e)
             return np.zeros((N, F))
 
     def cross_section(
@@ -125,12 +134,18 @@ class ARTSAbsorber(SingleSpeciesModel):
         np.ndarray
             Cross-section array (level, frequency) in m^2
         """
-        print("Calculating ARTS cross-sections with tags", self.config.arts_tag)
         pressure = np.asarray(pressure, dtype=float)
         temperature = np.asarray(temperature, dtype=float)
         vmr = np.asarray(vmr, dtype=float)
         N = pressure.size
         F = len(self.config.frequency_grid)
+
+        logger.debug(
+            "Calculating ARTS cross-sections for %s with tags %s (N=%d)",
+            self.config.species,
+            self.config.arts_tag,
+            N,
+        )
 
         vmr_arts = (
             vmr if self.config.use_self_broadening else np.full(N, self.config.vmr0)
