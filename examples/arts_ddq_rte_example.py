@@ -25,13 +25,13 @@ _ = rte  # keep import for accessor registration
 
 ROOT = Path(__file__).resolve().parents[1]
 
-example_dir = Path("/Users/rk/Work/rte-rrtmgp/build/rte-examples-data/")
+example_dir = Path("../data/rte_examples/")
 example_files = [
     example_dir / file
     for file in [
-        # "ckdmip-states.nc",
-        # "rce-states.nc",
-        "rfmip-states.nc",
+        "ckdmip-states.nc",
+        "rce-states.nc",
+        # "rfmip-states.nc",
     ]
 ]
 
@@ -89,7 +89,7 @@ halocarbons = {
     ),
 }
 
-continuum_tags = ("H2O-ForeignContCKDMT430", "H2O-SelfContCKDMT430")
+continuum_tags = ("H2O-ForeignContCKDMT350", "H2O-SelfContCKDMT350")
 
 
 def aggregate_fluxes(fluxes: xr.Dataset, band: str) -> xr.Dataset:
