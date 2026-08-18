@@ -78,10 +78,10 @@ class GasOptics:
                     "Unsupported faxsec class %r in datatree, skipping.", class_name
                 )
             else:
-                ds = dt[class_name]
+                ds = dt[class_name].to_dataset().load()
                 for sp in ds.species.values:
                     sp_ds = ds.sel(species=sp)
-                    absorber = absorber_cls.from_dataset(sp_ds.to_dataset())
+                    absorber = absorber_cls.from_dataset(sp_ds)
                     absorbers[str(sp) + "_" + class_name] = absorber
         return cls.from_absorbers(absorbers)
 
