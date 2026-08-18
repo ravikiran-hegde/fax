@@ -25,13 +25,13 @@ rename_dict = {
 }
 
 
-def get_gas_optics_bundle(band):
+def get_gas_optics_bundle(band, suffix=""):
     # dt_name = (
     #     "gas_optics_Highres_SW_100001.nc"
     #     if band == "sw"
     #     else "gas_optics_Highres_LW_100000.nc"
     # )
-    dt_name = f"gas_optics_DDQ_{band.upper()}.nc"
+    dt_name = f"gas_optics_DDQ_{band.upper()}_{suffix}.nc"
     gas_optics_dt = xr.open_datatree(f"/Users/rk/Work/faxsec/data/ff/{dt_name}")
     return gas_optics_dt, GasOptics.from_datatree(gas_optics_dt)
 
@@ -67,11 +67,11 @@ def add_net_flux(fluxes):
     fluxes["flux_down"] = fluxes["lw_flux_down"] + fluxes["sw_flux_down"]
 
 
-def do_ddq_example(file_path, band):
+def do_ddq_example(file_path, band, suffix=""):
     atm_ds = xr.load_dataset(file_path)
     atm_ds = atm_ds.rename({k: v for k, v in rename_dict.items() if k in atm_ds})
 
-    gas_optics_dt, gas_optics = get_gas_optics_bundle(band)
+    gas_optics_dt, gas_optics = get_gas_optics_bundle(band, suffix)
 
     atm_ds = atm_ds.rename(
         {
@@ -181,7 +181,10 @@ def do_ddq_example(file_path, band):
     return fluxes
 
 
-def do_rrtgmp_example(file_path, band):
+def do_rrtgmp_example(
+    file_path,
+    band,
+):
 
     from pyrte_rrtmgp.rrtmgp import GasOptics as R_GasOptics
     from pyrte_rrtmgp.rrtmgp.data_files import (
@@ -238,15 +241,16 @@ def do_rrtgmp_example(file_path, band):
 
 
 # %% Run and save all examples
+suffix = "trange"
 for example in range(len(example_files)):
-    ddq_fluxes_lw = do_ddq_example(example_files[example], "lw")
-    ddq_fluxes_sw = do_ddq_example(example_files[example], "sw")
+    ddq_fluxes_lw = do_ddq_example(example_files[example], "lw", suffix)
+    ddq_fluxes_sw = do_ddq_example(example_files[example], "sw", suffix)
     ddq_fluxes = xr.merge([ddq_fluxes_lw, ddq_fluxes_sw], compat="equals", join="outer")
 
     add_net_flux(ddq_fluxes)
 
     ddq_fluxes.to_netcdf(
-        f"/Users/rk/Work/faxsec/data/rte_examples/pyddq_fluxes_{example_files[example].split('/')[-1].split('-')[0]}.nc"
+        f"/Users/rk/Work/faxsec/data/rte_examples/pyddq_fluxes_{example_files[example].split('/')[-1].split('-')[0]}_{suffix}.nc"
     )
 
 # for example in range(len(example_files)):
