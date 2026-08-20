@@ -97,6 +97,31 @@ def rayleigh_xsec_stamnes_2017(frequency_hz: np.ndarray) -> np.ndarray:
     return rayleigh_xsec
 
 
+# Molecules per square metre in a whole air column at 1013 hPa, and the
+# representative maximum column-mean VMR of each species.
+AIR_COLUMN = 2.1e29
+COLUMN_VMR = {
+    "H2O": 4.0e-2,
+    "CO2": 2.0e-3,
+    "O3": 1.0e-5,
+    "N2O": 5.0e-7,
+    "CH4": 4.0e-6,
+    "O2": 2.095e-1,
+    "N2": 7.808e-1,
+}
+
+
+def xsec_relevance_floor(species: str, tau_min: float = 1e-6) -> float:
+    """Cross-section below which a species cannot reach ``tau_min`` in a column.
+
+    Reference values below this are not worth fitting: they carry no optical
+    depth, but in log space they span many e-folds and would otherwise steer
+    the fit.
+    """
+    vmr = COLUMN_VMR.get(species, REF_VMR)
+    return tau_min / (vmr * AIR_COLUMN)
+
+
 def simple_vmr_profile(
     species: str,
     pressure: np.ndarray,
@@ -314,6 +339,13 @@ def sample_atmospheres(
     """Draw samples using one of the available atmosphere sampling methods."""
     if method in ("random", "uniform"):
         return sample_uniform(p_range, T_range, N_samples, seed)
+    if method == "atmospheric":
+        return sample_atmospheres_atmospheric(
+            p_range,
+            N_samples,
+            seed=seed,
+            **kwargs,
+        )
     if method == "natural":
         return sample_atmospheres_natural(
             p_range,
@@ -431,6 +463,73 @@ def sample_atmospheres_natural(
 
     T = np.asarray(t_samples, dtype=float)
     p = np.exp(lnp_samples)
+    return p, T
+
+
+# Temperature range the atmosphere actually occupies, as
+# (pressure [Pa], T_min [K], T_max [K]) knots interpolated in log-pressure.
+ATMOSPHERIC_T_ENVELOPE = (
+    (1.0, 165.0, 245.0),
+    (10.0, 190.0, 290.0),
+    (100.0, 185.0, 315.0),
+    (1.0e3, 160.0, 290.0),
+    (1.0e4, 165.0, 260.0),
+    (3.0e4, 170.0, 280.0),
+    (1.0e5, 195.0, 330.0),
+)
+
+
+def atmospheric_t_range(
+    pressure: ArrayLike,
+    envelope: Sequence[Sequence[float]] = ATMOSPHERIC_T_ENVELOPE,
+    pad: float = 0.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Occupied temperature range at each pressure, interpolated in log-p."""
+    knots = np.asarray(envelope, dtype=float)
+    lnp = np.log(np.asarray(pressure, dtype=float))
+    lnp_knots = np.log(knots[:, 0])
+    t_min = np.interp(lnp, lnp_knots, knots[:, 1]) - pad
+    t_max = np.interp(lnp, lnp_knots, knots[:, 2]) + pad
+    return t_min, t_max
+
+
+def sample_atmospheres_atmospheric(
+    p_range: Sequence[float],
+    N_samples: int,
+    seed: int | None = None,
+    n_p_strata: int | None = None,
+    pressure_weight: float = 0.5,
+    envelope: Sequence[Sequence[float]] = ATMOSPHERIC_T_ENVELOPE,
+    pad: float = 0.0,
+) -> SamplingResult:
+    """Stratified sampling of the (p, T) region the atmosphere actually occupies.
+
+    Temperature is drawn conditionally on pressure, from the occupied range at
+    that pressure, so no sample falls in a corner that cannot exist.
+
+    ``pressure_weight`` sets how strata are spaced: 0 is uniform in log
+    pressure, 1 is uniform in pressure, i.e. equal air mass per stratum.
+    Intermediate values trade accuracy aloft against accuracy where most of
+    the absorbing mass is.
+    """
+    rng = _rng(seed)
+    n_p_use, n_T_use = _resolve_grid_shape_max(N_samples, n_p=n_p_strata)
+
+    if pressure_weight <= 0:
+        edges = np.linspace(np.log(p_range[0]), np.log(p_range[1]), n_p_use + 1)
+        to_p = np.exp
+    else:
+        k = float(pressure_weight)
+        edges = np.linspace(p_range[0] ** k, p_range[1] ** k, n_p_use + 1)
+        to_p = lambda u: u ** (1.0 / k)  # noqa: E731
+
+    frac_edges = np.linspace(0.0, 1.0, n_T_use + 1)
+    drawn = rng.uniform(edges[:-1], edges[1:], size=(n_T_use, n_p_use)).T
+    frac = rng.uniform(frac_edges[:-1], frac_edges[1:], size=(n_p_use, n_T_use))
+
+    p = to_p(drawn).ravel()
+    t_min, t_max = atmospheric_t_range(p, envelope, pad)
+    T = t_min + frac.ravel() * (t_max - t_min)
     return p, T
 
 
