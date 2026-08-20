@@ -219,13 +219,24 @@ def ensure_reference_dataset(
         cache_path = reference_cache_path(species=species, arts_tag=arts_tag)
     cache_path = Path(cache_path)
 
+    sampling_kwargs = {} if sampling_kwargs is None else dict(sampling_kwargs)
+
     if cache_path.exists() and not force:
+        cached = xr.open_dataset(cache_path).attrs.get("sampling_kwargs")
+        if cached is not None and cached != str(sampling_kwargs):
+            logger.warning(
+                "Cached reference for %s was built with sampling %s, not %s; "
+                "delete %s to rebuild it",
+                species,
+                cached,
+                sampling_kwargs,
+                cache_path,
+            )
         logger.debug("Using cached ARTS reference for %s: %s", species, cache_path)
         return cache_path
 
     logger.info("Computing ARTS reference for %s (tags=%s)", species, arts_tag)
 
-    sampling_kwargs = {} if sampling_kwargs is None else dict(sampling_kwargs)
     arts_reference_kwargs = (
         {} if arts_reference_kwargs is None else dict(arts_reference_kwargs)
     )
@@ -249,6 +260,7 @@ def ensure_reference_dataset(
         **arts_reference_kwargs,
     )
 
+    reference_ds.attrs["sampling_kwargs"] = str(sampling_kwargs)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     reference_ds.to_netcdf(cache_path)
     logger.info(
