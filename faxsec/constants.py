@@ -40,6 +40,13 @@ SELF_SCALING = (
     }
 )
 
+# Collision-induced absorption scales with collision-partner density, so these
+# species must be referenced at their atmospheric VMR rather than at REF_VMR.
+REFERENCE_VMR = {
+    "N2": 0.7808,
+    "O2": 0.2095,
+}
+
 DEFAULT_VMR = {
     "N2": 0.7808,
     "O2": 0.2095,
