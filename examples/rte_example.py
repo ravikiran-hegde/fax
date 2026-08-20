@@ -429,7 +429,7 @@ def main() -> None:
     add_net_flux(fluxes)
     logger.info("Computed LW+SW fluxes in %.2fs", time.time() - t0)
 
-    output_name = f"fluxes_{args.gas_optics}_{args.case}"
+    output_name = f"fluxes_{args.gas_optics}_{args.case}{args.suffix}"
     if args.variant is not None:
         output_name += f"_v{args.variant:03d}"
     if args.columns is not None:
