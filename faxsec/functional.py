@@ -56,6 +56,8 @@ class FunctionalCoeffs:
     xsec0: Optional[np.ndarray] = None
     pressure_coeffs: Optional[np.ndarray] = None
     temperature_coeffs: Optional[np.ndarray] = None
+    x_p_range: Optional[np.ndarray] = None
+    x_t_range: Optional[np.ndarray] = None
 
 
 class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
@@ -134,6 +136,14 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
         x_t: np.ndarray,
     ) -> np.ndarray:
         """Return cross-section matrix with shape (levels, frequency) from pre-computed x_p and x_t."""
+        # The forms carry no information outside the range they were fitted on,
+        # and a rational in particular grows fast there. Hold the boundary value
+        # instead of extrapolating.
+        if self.coeffs.x_p_range is not None:
+            x_p = np.clip(x_p, *self.coeffs.x_p_range)
+        if self.coeffs.x_t_range is not None:
+            x_t = np.clip(x_t, *self.coeffs.x_t_range)
+
         p_scale = self.pressure_form.evaluate(x_p, self.coeffs.pressure_coeffs)
         t_scale = self.temperature_form.evaluate(x_t, self.coeffs.temperature_coeffs)
 
@@ -267,6 +277,17 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
         else:
             logger.info("Reached max_iter=%d (rss=%.6g)", max_iter, rss)
 
+        # Self-broadening raises the effective pressure above anything in the
+        # reference, which is built at ref_vmr, so the valid range must allow
+        # for it or the correction would be clipped away at the surface.
+        from .utils import COLUMN_VMR
+
+        self_broadening = np.log1p(
+            COLUMN_VMR.get(self.config.species, 0.0) * self.config.self_scaling
+        )
+        self.coeffs.x_p_range = np.array([x_p.min(), x_p.max() + self_broadening])
+        self.coeffs.x_t_range = np.array([x_t.min(), x_t.max()])
+
         return rss
 
     def to_dataset(self) -> xr.Dataset:
@@ -286,6 +307,8 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
                 "ref_temperature": ((), self.config.ref_temperature),
                 "ref_vmr": ((), self.config.ref_vmr),
                 "self_scaling": ((), float(self.config.self_scaling)),
+                "x_p_range": (("bound",), self.coeffs.x_p_range),
+                "x_t_range": (("bound",), self.coeffs.x_t_range),
             },
             coords={
                 "frequency": self.config.frequency_grid,
@@ -300,6 +323,7 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
                     else 0
                 ),
                 "species": self.config.species,
+                "bound": ["min", "max"],
             },
             attrs={
                 "pressure_form": self.config.pressure_form_name,
@@ -328,6 +352,8 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
             xsec0=ds.xsec0.values,
             pressure_coeffs=ds.pressure_coeffs.values,
             temperature_coeffs=ds.temperature_coeffs.values,
+            x_p_range=ds["x_p_range"].values if "x_p_range" in ds else None,
+            x_t_range=ds["x_t_range"].values if "x_t_range" in ds else None,
         )
         absorber = cls(
             species=config.species,
