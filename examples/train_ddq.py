@@ -48,8 +48,29 @@ TRAINING_CONFIGS = {
             "N_samples": 2000,
             "pressure_weight": 0.5,
         },
+        # Shortwave surface flux is a column-transmission problem, so equal air
+        # mass per stratum is the natural design. The longwave emits from every
+        # layer and takes part of its OLR from the stratosphere, so it needs a
+        # compromise.
+        "bands": {
+            "LW": {"sampling": {"pressure_weight": 0.5}},
+            "SW": {"sampling": {"pressure_weight": 1.0}},
+        },
     },
 }
+
+
+def band_config(config: dict, band: str) -> dict:
+    """Configuration for one band, with any band overrides merged in."""
+    resolved = {k: v for k, v in config.items() if k != "bands"}
+    resolved["sampling"] = dict(resolved["sampling"])
+    override = config.get("bands", {}).get(band, {})
+    for key, value in override.items():
+        if key == "sampling":
+            resolved["sampling"].update(value)
+        else:
+            resolved[key] = value
+    return resolved
 
 
 def parse_args() -> argparse.Namespace:
@@ -70,11 +91,10 @@ def parse_args() -> argparse.Namespace:
 
 args = parse_args()
 suffix = args.suffix
-config = TRAINING_CONFIGS[args.config]
+base_config = TRAINING_CONFIGS[args.config]
 reference_suffix = (
     args.reference_suffix if args.reference_suffix is not None else f"_{args.config}"
 )
-sampling_kwargs = config["sampling"]
 
 
 def train_fax(
@@ -237,6 +257,8 @@ for ddq_case in ddq_files:
     )
 
     absorbers = {}
+    config = band_config(base_config, band)
+    sampling_kwargs = config["sampling"]
     reference_cache_dir = DATA_DIR / "reference" / f"{case_name}{reference_suffix}"
 
     # lines
