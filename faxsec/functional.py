@@ -48,6 +48,7 @@ class FunctionalConfig(AbsorberConfig):
     ref_temperature: float = REF_TEMPERATURE
     ref_vmr: float = REF_VMR
     temperature_variable: str = "dT"  # "dT" or "T_ratio"
+    xsec_floor: float = 1e-45  # reference values below this are underflow, not data
 
 
 @dataclass
@@ -74,6 +75,7 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
         ref_vmr: float = REF_VMR,
         self_scaling: int | float = 0,
         temperature_variable: str = "dT",
+        xsec_floor: float = 1e-45,
     ) -> None:
         pressure_form = functional_form_registry.get(pressure_form_name)
         temperature_form = functional_form_registry.get(temperature_form_name)
@@ -97,6 +99,7 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
             frequency_grid=frequency_grid,
             self_scaling=self_scaling,
             temperature_variable=temperature_variable,
+            xsec_floor=xsec_floor,
         )
         self.coeffs = FunctionalCoeffs()
 
@@ -209,9 +212,21 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
             )
         )
 
+        # Underflowed reference values are a constant placeholder, not data.
+        weights = (reference_ds["xsec"].values > self.config.xsec_floor).astype(float)
+        n_masked = int((weights == 0).sum())
+        if n_masked:
+            logger.info(
+                "%s: masked %d/%d underflowed reference values",
+                self.config.species,
+                n_masked,
+                weights.size,
+            )
+
         # training using alternating least squares
 
-        p_pred = t_pred = np.zeros_like(reference_ds["norm_lnxsec"].values)
+        target = reference_ds["norm_lnxsec"].values
+        p_pred = t_pred = np.zeros_like(target)
         p_coeffs = t_coeffs = None
 
         prev_rss = np.inf
@@ -229,18 +244,14 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
         for iteration in range(max_iter):
 
             # Fit T given P (lnxsec - P_effect ~ T_effect)
-            t_coeffs = self.temperature_form.fit(
-                x_t, reference_ds["norm_lnxsec"].values - p_pred
-            )
+            t_coeffs = self.temperature_form.fit(x_t, target - p_pred, weights)
             t_pred = self.temperature_form.evaluate(x_t, t_coeffs)
 
             # Fit P given T (lnxsec - T_effect ~ P_effect)
-            p_coeffs = self.pressure_form.fit(
-                x_p, reference_ds["norm_lnxsec"].values - t_pred
-            )
+            p_coeffs = self.pressure_form.fit(x_p, target - t_pred, weights)
             p_pred = self.pressure_form.evaluate(x_p, p_coeffs)
 
-            rss = np.sum((reference_ds["norm_lnxsec"].values - p_pred - t_pred) ** 2)
+            rss = np.sum(weights * (target - p_pred - t_pred) ** 2)
 
             self.coeffs.pressure_coeffs = p_coeffs
             self.coeffs.temperature_coeffs = t_coeffs

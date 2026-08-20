@@ -19,8 +19,14 @@ class FunctionalForm(ABC):
         """Evaluate function at given x values."""
 
     @abstractmethod
-    def fit(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
-        """Fit coefficients to data y = f(x)."""
+    def fit(
+        self, x: np.ndarray, y: np.ndarray, weights: np.ndarray | None = None
+    ) -> np.ndarray:
+        """Fit coefficients to data y = f(x).
+
+        ``weights`` is an optional (N, F) array of least-squares weights;
+        zero weight drops a sample from that frequency's fit.
+        """
 
     @abstractmethod
     def coefficient_names(self) -> List[str]:
@@ -65,9 +71,19 @@ class PolynomialForm(FunctionalForm):
 
         return V @ coeffs  # (N, deg) @ (deg, F) -> (N, F)
 
-    def fit(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    def fit(
+        self, x: np.ndarray, y: np.ndarray, weights: np.ndarray | None = None
+    ) -> np.ndarray:
         V = self._vandermode(x)
-        coeffs, _, _, _ = np.linalg.lstsq(V, y, rcond=None)
+        if weights is None:
+            coeffs, _, _, _ = np.linalg.lstsq(V, y, rcond=None)
+            return coeffs
+        coeffs = np.zeros((V.shape[1], y.shape[1]))
+        for fi in range(y.shape[1]):
+            s = np.sqrt(np.clip(weights[:, fi], 0.0, None))
+            coeffs[:, fi], *_ = np.linalg.lstsq(
+                V * s[:, None], y[:, fi] * s, rcond=None
+            )
         return coeffs
 
     def coefficient_names(self) -> List[str]:
@@ -121,7 +137,9 @@ class HingeForm(FunctionalForm):
         X = self._hinge_matrix(x, coeffs[-1])  # (N, F, 3)
         return np.einsum("NFK,KF->NF", X, coeffs[:-1])  # (N, F, 3) @ (3, F) -> (N, F)
 
-    def fit(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    def fit(
+        self, x: np.ndarray, y: np.ndarray, weights: np.ndarray | None = None
+    ) -> np.ndarray:
         """Fit hinge coefficients optimizing breakpoint xb per frequency."""
 
         from scipy.optimize import minimize_scalar
@@ -131,28 +149,35 @@ class HingeForm(FunctionalForm):
 
         fit = np.zeros((4, n_freq))  # c0, c1, c2, xb
 
-        def loss(xb, y_col):
+        def loss(xb, y_col, w):
             # Design matrix: [1, min(x, xb), max(x-xb, 0)]
             X = self._hinge_matrix(x_col, xb)[:, 0]  # (N, 3)
 
             if not np.all(np.isfinite(X)) or not np.all(np.isfinite(y_col)):
                 return np.inf, np.zeros(X.shape[1])
 
-            coeffs, res, _, _ = np.linalg.lstsq(X, y_col, rcond=None)
+            coeffs, res, _, _ = np.linalg.lstsq(X * w[:, None], y_col * w, rcond=None)
             pred = X @ coeffs
-            return np.sum((pred - y_col) ** 2), coeffs
+            return np.sum(((pred - y_col) * w) ** 2), coeffs
 
         # Optimization per frequency
         logger.info("Fitting Hinge model...")
 
-        bounds = (np.min(x_col), np.max(x_col))
-
         for fi in range(n_freq):
             y_col = y[:, fi]
+            w = (
+                np.ones_like(y_col)
+                if weights is None
+                else np.sqrt(np.clip(weights[:, fi], 0.0, None))
+            )
+            used = w > 0
+            if used.sum() < 4:
+                continue
+            bounds = (float(np.min(x[used])), float(np.max(x[used])))
 
             # find optimal breakpoint for this frequency
             result = minimize_scalar(
-                lambda xb: loss(xb, y_col)[0],
+                lambda xb: loss(xb, y_col, w)[0],
                 bounds=bounds,
                 method="bounded",
             )
@@ -160,7 +185,7 @@ class HingeForm(FunctionalForm):
             xb_opt = float(result.x)
 
             #  evaluate coefficients at optimal breakpoint
-            _, coeffs = loss(xb_opt, y_col)
+            _, coeffs = loss(xb_opt, y_col, w)
 
             fit[:3, fi] = coeffs
             fit[3, fi] = xb_opt
@@ -267,14 +292,19 @@ class RationalForm(FunctionalForm):
     @dataclass
     class FitConfig:
         regularization: float = 1e-2
-        stability_weight: float = 1.0
         den_floor: float = 0.1
-        n_collocation: int = 25
         collocation_margin: float = 0.05
         max_nfev: int = 800
 
-    def fit(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    def fit(
+        self, x: np.ndarray, y: np.ndarray, weights: np.ndarray | None = None
+    ) -> np.ndarray:
         """Fit rational function per frequency.
+
+        The denominator is required to stay positive across the evaluation
+        range: a root inside it is a pole, and the cross-section diverges
+        there. Frequencies whose unconstrained optimum has one are refitted
+        with coefficient bounds that make a root impossible.
 
         Returns
         -------
@@ -291,44 +321,29 @@ class RationalForm(FunctionalForm):
 
         x_min, x_max = x.min(), x.max()
         x_absmax = max(abs(x_min), abs(x_max), 1e-12)
-        x_span = x_max - x_min
+        margin = self.fit_config.collocation_margin * (x_max - x_min)
+        x_check = np.linspace(x_min - margin, x_max + margin, 512)
 
-        if x_span > 0:
-            margin = self.fit_config.collocation_margin * x_span
-            xg = np.linspace(
-                x_min - margin, x_max + margin, int(self.fit_config.n_collocation)
-            )
-        else:
-            xg = np.array([x_min])
-
-        # Precompute basis matrices
-        Vn = self._vandermonde_num(x)  # (N, n_a)
-        Vd = self._vandermonde_den(x)  # (N, n_b)
-        Vd_g = self._vandermonde_den(xg)  # (G, n_b)
+        Vn = self._vandermonde_num(x)
+        Vd = self._vandermonde_den(x)
+        Vd_check = self._vandermonde_den(x_check)
 
         b_scale = np.array([x_absmax**i for i in range(1, self._n_b + 1)])
+        floor = self.fit_config.den_floor
+        # Sufficient bound: each denominator term is limited so their sum can
+        # never pull 1 + sum(b_i x^i) below the floor.
+        b_bound = (1.0 - floor) / (self._n_b * np.maximum(b_scale, 1e-30))
 
         def _den(b, Vd_):
             den = Vd_ @ b + 1.0
             return np.where(np.abs(den) < 1e-12, np.copysign(1e-12, den), den)
 
-        def _residual(
-            params: np.ndarray, y_col: np.ndarray, y_scale: float
-        ) -> np.ndarray:
+        def _residual(params, y_col, w):
             a = params[: self._n_a]
             b = params[self._n_a :]
-
-            fit_res = (Vn @ a) / _den(b, Vd) - y_col
-
+            fit_res = ((Vn @ a) / _den(b, Vd) - y_col) * w
             reg_res = np.sqrt(self.fit_config.regularization) * b * b_scale
-
-            small = (
-                np.maximum(0.0, self.fit_config.den_floor - np.abs(_den(b, Vd_g)))
-                / self.fit_config.den_floor
-            )
-            stab_res = np.sqrt(self.fit_config.stability_weight) * y_scale * small
-
-            return np.concatenate([fit_res, reg_res, stab_res])
+            return np.concatenate([fit_res, reg_res])
 
         logger.info(
             "Fitting RationalForm (num=%d, den=%d) ...",
@@ -336,18 +351,25 @@ class RationalForm(FunctionalForm):
             self.denominator_order,
         )
 
+        n_bounded = 0
         for fi in range(n_freq):
             y_col = y[:, fi]
             if not np.all(np.isfinite(y_col)):
                 continue
-
-            y_scale = max(float(np.ptp(y_col)), 1e-6)
+            w = (
+                np.ones_like(y_col)
+                if weights is None
+                else np.sqrt(np.clip(weights[:, fi], 0.0, None))
+            )
+            used = w > 0
+            if used.sum() < self._n_params + 1:
+                continue
 
             x0 = np.zeros(self._n_params)
             try:
-                slope, intercept = np.polyfit(x, y_col, 1)
+                slope, intercept = np.polyfit(x[used], y_col[used], 1)
             except Exception:
-                slope, intercept = 0.0, float(np.mean(y_col))
+                slope, intercept = 0.0, float(np.mean(y_col[used]))
             x0[0] = intercept
             if self._n_a > 1:
                 x0[1] = slope
@@ -355,15 +377,27 @@ class RationalForm(FunctionalForm):
             result = least_squares(
                 _residual,
                 x0,
-                args=(y_col, y_scale),
+                args=(y_col, w),
                 loss="soft_l1",
                 max_nfev=int(self.fit_config.max_nfev),
             )
 
+            if _den(result.x[self._n_a :], Vd_check).min() < floor:
+                lo = np.concatenate([np.full(self._n_a, -np.inf), -b_bound])
+                hi = np.concatenate([np.full(self._n_a, np.inf), b_bound])
+                result = least_squares(
+                    _residual,
+                    np.clip(x0, lo, hi),
+                    args=(y_col, w),
+                    bounds=(lo, hi),
+                    max_nfev=int(self.fit_config.max_nfev),
+                )
+                n_bounded += 1
+
             coeffs[:, fi] = result.x
 
-            if fi % max(1, n_freq // 10) == 0:
-                logger.debug("  Rational fit progress: %d/%d", fi + 1, n_freq)
+        if n_bounded:
+            logger.info("  %d/%d frequencies refitted pole-free", n_bounded, n_freq)
 
         return coeffs  # (n_params, F)
 
@@ -381,7 +415,9 @@ class PowerLawForm(FunctionalForm):
         c0, c1, c2 = coeffs[0], coeffs[1], coeffs[2]
         return c0 * (x_safe**c1) + c2
 
-    def fit(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    def fit(
+        self, x: np.ndarray, y: np.ndarray, weights: np.ndarray | None = None
+    ) -> np.ndarray:
         from scipy.optimize import least_squares
 
         x_safe = np.maximum(np.ravel(x), 1e-12)
@@ -431,7 +467,9 @@ class NullForm(FunctionalForm):
     def evaluate(self, x: np.ndarray, coeffs: np.ndarray) -> np.ndarray:
         return np.zeros((np.atleast_1d(x).shape[0], coeffs.shape[1]))
 
-    def fit(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    def fit(
+        self, x: np.ndarray, y: np.ndarray, weights: np.ndarray | None = None
+    ) -> np.ndarray:
         f_size = y.shape[1] if y.ndim > 1 else 1
         return np.zeros((1, f_size))
 
