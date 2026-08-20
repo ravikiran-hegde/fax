@@ -1,15 +1,23 @@
 # %%
+import argparse
 import logging
 from pathlib import Path
 
 import numpy as np
 import xarray as xr
 
-from faxsec.constants import SELF_SCALING
+from faxsec.constants import (
+    REF_PRESSURE,
+    REF_TEMPERATURE,
+    REF_VMR,
+    REFERENCE_VMR,
+    SELF_SCALING,
+)
 from faxsec.functional import FunctionalAbsorber
 from faxsec.log_config import setup_logging
 from faxsec.utils import (
     ensure_reference_dataset,
+    xsec_relevance_floor,
     kayser_to_hz,
     rayleigh_xsec_stamnes_2017,
     reference_cache_path,
@@ -21,19 +29,52 @@ logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 
-suffix = "rndsmpl"
-
-sampling_kwargs = {
-    # "p_range": [0.01, 110000],
-    # "T_range": [120.0, 360.0],
-    # "N_samples": 1000,
-    # "seed": 42,
-    # "method": "natural",
-    # "pressure_power": 5.0,
-    # "n_p_strata": 10,
-    # "n_T_strata": 10,
-    # "samples_per_cell": 1,
+# Named training configurations. Each gives the reference point the fit is
+# anchored at and how the (p, T) training sample is drawn; bands may differ.
+TRAINING_CONFIGS = {
+    "legacy": {
+        "ref_pressure": REF_PRESSURE,
+        "ref_temperature": REF_TEMPERATURE,
+        "temperature_variable": "dT",
+        "sampling": {"method": "natural", "p_range": [0.01, 110000], "N_samples": 1000},
+    },
+    "atmospheric": {
+        "ref_pressure": 1.0e4,
+        "ref_temperature": 240.0,
+        "temperature_variable": "dT",
+        "sampling": {
+            "method": "atmospheric",
+            "p_range": [1.0, 1.05e5],
+            "N_samples": 2000,
+            "pressure_weight": 0.5,
+        },
+    },
 }
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--suffix", default="", help="Suffix of the trained datatree to write"
+    )
+    parser.add_argument(
+        "--reference-suffix",
+        default=None,
+        help="Reference cache to train from (default: named after --config, "
+        "since the sampling configuration is what determines it)",
+    )
+    parser.add_argument("--bands", default="LW,SW")
+    parser.add_argument("--config", default="atmospheric", choices=TRAINING_CONFIGS)
+    return parser.parse_args()
+
+
+args = parse_args()
+suffix = args.suffix
+config = TRAINING_CONFIGS[args.config]
+reference_suffix = (
+    args.reference_suffix if args.reference_suffix is not None else f"_{args.config}"
+)
+sampling_kwargs = config["sampling"]
 
 
 def train_fax(
@@ -42,6 +83,9 @@ def train_fax(
     frequency_grid: np.ndarray,
     reference_cache_dir: str | Path,
     sampling_kwargs: dict | None = None,
+    ref_pressure: float = REF_PRESSURE,
+    ref_temperature: float = REF_TEMPERATURE,
+    temperature_variable: str = "dT",
 ) -> FunctionalAbsorber:
     """Train a FAX model for a given species and frequency grid.
 
@@ -55,6 +99,8 @@ def train_fax(
         The directory to cache reference datasets, by default None.
     """
 
+    ref_vmr = REFERENCE_VMR.get(species, REF_VMR)
+
     ensure_reference_dataset(
         species=species,
         frequency_grid=frequency_grid,
@@ -64,6 +110,10 @@ def train_fax(
             arts_tag=arts_tag,
             cache_dir=reference_cache_dir,
         ),
+        ref_pressure=ref_pressure,
+        ref_temperature=ref_temperature,
+        ref_vmr=ref_vmr,
+        sampling_kwargs=sampling_kwargs,
     )
 
     func_abs = FunctionalAbsorber(
@@ -72,6 +122,11 @@ def train_fax(
         temperature_form_name="Rational",
         frequency_grid=frequency_grid,
         self_scaling=SELF_SCALING.get(species, 0.0),
+        xsec_floor=xsec_relevance_floor(species),
+        temperature_variable=temperature_variable,
+        ref_pressure=ref_pressure,
+        ref_temperature=ref_temperature,
+        ref_vmr=ref_vmr,
     )
 
     func_abs.train(
@@ -162,7 +217,7 @@ continuum = {
 # ddq_files = [
 #     ddq_loc / f"DDQ_{band}_{i}.h5" for band in ["LW", "SW"] for i in range(1, 9)
 # ]
-ddq_files = [DATA_DIR / "ddq" / f"DDQ_{band}.h5" for band in ["LW", "SW"]]
+ddq_files = [DATA_DIR / "ddq" / f"DDQ_{band}.h5" for band in args.bands.split(",")]
 
 for ddq_case in ddq_files:
     case_name = ddq_case.stem  # e.g. "DDQ_LW"
@@ -182,7 +237,7 @@ for ddq_case in ddq_files:
     )
 
     absorbers = {}
-    reference_cache_dir = DATA_DIR / "reference" / f"{case_name}{suffix}"
+    reference_cache_dir = DATA_DIR / "reference" / f"{case_name}{reference_suffix}"
 
     # lines
     for sp in lines[band].keys():
@@ -191,6 +246,10 @@ for ddq_case in ddq_files:
             arts_tag=lines[band][sp],
             frequency_grid=frequency_grid,
             reference_cache_dir=reference_cache_dir,
+            sampling_kwargs=sampling_kwargs,
+            ref_pressure=config["ref_pressure"],
+            ref_temperature=config["ref_temperature"],
+            temperature_variable=config["temperature_variable"],
         )
         absorbers[sp] = func_abs
 
@@ -268,6 +327,12 @@ for ddq_case in ddq_files:
         datatree[key] = ds
 
     datatree["DDQ"] = ddq
+    datatree.attrs.update(
+        reference_cache=str(reference_cache_dir),
+        suffix=suffix,
+        training_config=args.config,
+        config_detail=str(config),
+    )
 
     output_path = DATA_DIR / "ff" / f"gas_optics_{case_name}{suffix}.nc"
     datatree.to_netcdf(output_path, mode="w")
