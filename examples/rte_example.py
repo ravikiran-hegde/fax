@@ -83,7 +83,7 @@ HALOCARBONS = {
     "SW": ("CFC11-XFIT", "CFC12-XFIT", "O3-XFIT"),
     "LW": ("CFC11-XFIT", "CFC12-XFIT"),
 }
-CONTINUUM_TAGS = ("H2O-ForeignContCKDMT350", "H2O-SelfContCKDMT350")
+CONTINUUM_TAGS = ("H2O-ForeignContCKDMT400", "H2O-SelfContCKDMT400")
 
 
 # -----------------------------------------------------------------------------
