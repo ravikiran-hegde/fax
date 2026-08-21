@@ -16,6 +16,7 @@ from faxsec.constants import (
 from faxsec.functional import FunctionalAbsorber
 from faxsec.log_config import setup_logging
 from faxsec.utils import (
+    DEFAULT_REFERENCE_MEMORY_BUDGET,
     ensure_reference_dataset,
     kayser_to_hz,
     rayleigh_xsec_stamnes_2017,
@@ -86,10 +87,21 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--bands", default="LW,SW")
     parser.add_argument("--config", default="atmospheric", choices=TRAINING_CONFIGS)
+    parser.add_argument(
+        "--reference-memory",
+        type=float,
+        default=2.0,
+        help="GB of ARTS working memory per reference chunk (default: "
+        "%(default)s). Larger chunks keep ARTS better parallelised; the "
+        "reference itself is streamed to disk either way.",
+    )
     return parser.parse_args()
 
 
 args = parse_args()
+if args.reference_memory <= 0:
+    raise SystemExit("--reference-memory must be positive")
+reference_memory_budget = int(args.reference_memory * 1e9)  # bytes, as faxsec wants
 suffix = args.suffix
 base_config = TRAINING_CONFIGS[args.config]
 reference_suffix = (
@@ -106,6 +118,7 @@ def train_fax(
     ref_pressure: float = REF_PRESSURE,
     ref_temperature: float = REF_TEMPERATURE,
     temperature_variable: str = "dT",
+    memory_budget: int = DEFAULT_REFERENCE_MEMORY_BUDGET,
 ) -> FunctionalAbsorber:
     """Train a FAX model for a given species and frequency grid.
 
@@ -117,6 +130,8 @@ def train_fax(
         The frequency grid in Hz.
     reference_cache_dir : Path | None, optional
         The directory to cache reference datasets, by default None.
+    memory_budget : int, optional
+        Bytes of ARTS working memory per reference chunk.
     """
 
     ref_vmr = REFERENCE_VMR.get(species, REF_VMR)
@@ -134,6 +149,7 @@ def train_fax(
         ref_temperature=ref_temperature,
         ref_vmr=ref_vmr,
         sampling_kwargs=sampling_kwargs,
+        arts_reference_kwargs={"memory_budget": memory_budget},
     )
 
     func_abs = FunctionalAbsorber(
@@ -272,6 +288,7 @@ for case_name, kayser_grid in train_cases.items():
             ref_pressure=config["ref_pressure"],
             ref_temperature=config["ref_temperature"],
             temperature_variable=config["temperature_variable"],
+            memory_budget=reference_memory_budget,
         )
         absorbers[sp] = func_abs
 

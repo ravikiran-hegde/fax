@@ -149,7 +149,7 @@ def simple_vmr_profile(
 # ARTS working memory per (case, frequency) of one call, measured on a
 # 100k-point H2O reference.
 _ARTS_BYTES_PER_CASE_FREQ = 80
-DEFAULT_REFERENCE_MEMORY_BUDGET = 1 << 30  # 1 GiB of ARTS working memory
+DEFAULT_REFERENCE_MEMORY_BUDGET = 1_000_000_000  # 1 GB of ARTS working memory
 
 
 def _reference_dataset(
@@ -162,7 +162,7 @@ def _reference_dataset(
     case_chunk: int | None = None,
     memory_budget: int = DEFAULT_REFERENCE_MEMORY_BUDGET,
 ) -> xr.Dataset:
-    """Reference cross-sections as a dataset of unevaluated case blocks."""
+    """Reference cross-sections as a dataset of unevaluated case chunks."""
 
     if case_chunk is None:
         per_case = frequency_grid.size * _ARTS_BYTES_PER_CASE_FREQ
@@ -176,13 +176,13 @@ def _reference_dataset(
         coords={"case": np.arange(pressure.size), "frequency": frequency_grid},
     ).chunk({"case": case_chunk})
 
-    n_blocks = len(reference.chunksizes["case"])
+    n_chunks = len(reference.chunksizes["case"])
     logger.info(
-        "ARTS reference %s: %d cases x %d frequencies in %d block(s) of %d",
+        "ARTS reference %s: %d cases x %d frequencies in %d chunk(s) of %d",
         species,
         pressure.size,
         frequency_grid.size,
-        n_blocks,
+        n_chunks,
         case_chunk,
     )
 
@@ -194,14 +194,14 @@ def _reference_dataset(
             species=species, frequency_grid=frequency_grid, arts_tag=arts_tag
         )
 
-    block = count(1)
+    chunk = count(1)
 
     def cross_section(p: np.ndarray, t: np.ndarray, v: np.ndarray) -> np.ndarray:
         logger.info(
-            "ARTS reference %s: block %d/%d (%d cases)",
+            "ARTS reference %s: chunk %d/%d (%d cases)",
             species,
-            next(block),
-            n_blocks,
+            next(chunk),
+            n_chunks,
             p.size,
         )
         return absorber().cross_section(pressure=p, temperature=t, vmr=v)
@@ -226,7 +226,7 @@ def calulate_arts_reference(
     temperature: np.ndarray,
     vmr: np.ndarray,
     arts_tag: tuple[str, ...] | None = None,
-    **block_kwargs: Any,
+    **chunk_kwargs: Any,
 ) -> xr.Dataset:
     """Calculate reference cross-section dataset using ARTS, chunk by chunk."""
 
@@ -237,7 +237,7 @@ def calulate_arts_reference(
         np.asarray(temperature, dtype=float),
         np.asarray(vmr, dtype=float),
         arts_tag=arts_tag,
-        **block_kwargs,
+        **chunk_kwargs,
     ).compute(scheduler="synchronous")
 
 
@@ -279,7 +279,7 @@ def ensure_reference_dataset(
 ) -> Path:
     """Create or load the reference dataset required by FunctionalAbsorber.train().
 
-    The reference is computed in blocks and written block by block
+    The reference is computed and written chunk by chunk
     """
 
     if cache_path is None:
