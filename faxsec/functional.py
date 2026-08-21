@@ -214,16 +214,13 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
             .values
         )
 
-        reference_ds["norm_lnxsec"] = np.log(
-            reference_ds["xsec"]
-            / reference_ds["xsec"].sel(
-                pressure=self.config.ref_pressure,
-                temperature=self.config.ref_temperature,
-            )
-        )
+        target = reference_ds["xsec"].values / self.coeffs.xsec0
+        np.log(target, out=target)
 
         # Underflowed reference values are a constant placeholder, not data.
-        weights = (reference_ds["xsec"].values > self.config.xsec_floor).astype(float)
+        weights = (
+            target > np.log(self.config.xsec_floor) - np.log(self.coeffs.xsec0)
+        ).astype(float)
         n_masked = int((weights == 0).sum())
         if n_masked:
             logger.info(
@@ -235,8 +232,8 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
 
         # training using alternating least squares
 
-        target = reference_ds["norm_lnxsec"].values
-        p_pred = t_pred = np.zeros_like(target)
+        residual = np.empty_like(target)  # scratch buffer, reused every iteration
+        p_pred = t_pred = 0.0
         p_coeffs = t_coeffs = None
 
         prev_rss = np.inf
@@ -254,14 +251,17 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
         for iteration in range(max_iter):
 
             # Fit T given P (lnxsec - P_effect ~ T_effect)
-            t_coeffs = self.temperature_form.fit(x_t, target - p_pred, weights)
+            np.subtract(target, p_pred, out=residual)
+            t_coeffs = self.temperature_form.fit(x_t, residual, weights)
             t_pred = self.temperature_form.evaluate(x_t, t_coeffs)
 
             # Fit P given T (lnxsec - T_effect ~ P_effect)
-            p_coeffs = self.pressure_form.fit(x_p, target - t_pred, weights)
+            np.subtract(target, t_pred, out=residual)
+            p_coeffs = self.pressure_form.fit(x_p, residual, weights)
             p_pred = self.pressure_form.evaluate(x_p, p_coeffs)
 
-            rss = np.sum(weights * (target - p_pred - t_pred) ** 2)
+            residual -= p_pred  # residual is now target - p - t
+            rss = float(np.einsum("ij,ij,ij->", weights, residual, residual))
 
             self.coeffs.pressure_coeffs = p_coeffs
             self.coeffs.temperature_coeffs = t_coeffs
