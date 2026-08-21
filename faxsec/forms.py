@@ -97,28 +97,10 @@ class HingeForm(FunctionalForm):
     def __init__(self, include_bias: bool = True):
         self.include_bias = include_bias
 
-    def _hinge_matrix(self, x: np.ndarray, xb: ArrayLike) -> np.ndarray:
-        """Construct hinge matrix for evaluation.
-
-        Parameters        ----------
-        x : np.ndarray (N,)
-            The input data points at which to evaluate the function.
-        xb : ArrayLike (F,)
-            The breakpoints for the hinge function, one per frequency.
-
-        Returns
-        -------
-        np.ndarray (N, F, 3)
-            The hinge matrix for evaluation.
-        """
-        x_col = np.ravel(x)[:, None]  # (N, 1)
-        xb = np.ravel(xb)[None, :]  # (1, F)
-
-        H = np.empty((len(x), len(xb.ravel()), 3))
-        H[:, :, 0] = 1.0 if self.include_bias else 0.0
-        H[:, :, 1] = np.minimum(x_col, xb)  # below breakpoint (N, F)
-        H[:, :, 2] = np.maximum(x_col - xb, 0.0)  # above breakpoint (N, F)
-        return H
+    def _hinge_terms(self, x_col: np.ndarray, xb: ArrayLike) -> tuple:
+        """Basis terms (bias, min(x, xb), max(x - xb, 0)), shared by evaluate and fit."""
+        above = np.maximum(x_col - xb, 0.0)
+        return (1.0 if self.include_bias else 0.0), x_col - above, above
 
     def evaluate(self, x: np.ndarray, coeffs: np.ndarray) -> np.ndarray:
         """
@@ -134,8 +116,15 @@ class HingeForm(FunctionalForm):
         np.ndarray (N, F)
              The evaluated function values at each x for each frequency.
         """
-        X = self._hinge_matrix(x, coeffs[-1])  # (N, F, 3)
-        return np.einsum("NFK,KF->NF", X, coeffs[:-1])  # (N, F, 3) @ (3, F) -> (N, F)
+
+        c0, c1, c2, xb = coeffs
+        bias, below, above = self._hinge_terms(np.ravel(x)[:, None], xb)
+
+        below *= c1
+        above *= c2
+        below += above
+        below += bias * c0
+        return below
 
     def fit(
         self, x: np.ndarray, y: np.ndarray, weights: np.ndarray | None = None
@@ -151,7 +140,8 @@ class HingeForm(FunctionalForm):
 
         def loss(xb, y_col, w):
             # Design matrix: [1, min(x, xb), max(x-xb, 0)]
-            X = self._hinge_matrix(x_col, xb)[:, 0]  # (N, 3)
+            bias, below, above = self._hinge_terms(x_col, xb)
+            X = np.hstack([np.full_like(below, bias), below, above])  # (N, 3)
 
             if not np.all(np.isfinite(X)) or not np.all(np.isfinite(y_col)):
                 return np.inf, np.zeros(X.shape[1])
@@ -442,7 +432,7 @@ class PowerLawForm(FunctionalForm):
             x0 = [c0_init, c1_init, y_min]
 
             def residual(p):
-                return (p[0] * (x_safe**p[1]) + p[2]) - y_col
+                return (p[0] * (x_safe ** p[1]) + p[2]) - y_col
 
             try:
                 result = least_squares(residual, x0, loss="soft_l1")
