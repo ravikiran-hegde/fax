@@ -17,10 +17,10 @@ from faxsec.functional import FunctionalAbsorber
 from faxsec.log_config import setup_logging
 from faxsec.utils import (
     ensure_reference_dataset,
-    xsec_relevance_floor,
     kayser_to_hz,
     rayleigh_xsec_stamnes_2017,
     reference_cache_path,
+    xsec_relevance_floor,
 )
 
 setup_logging()
@@ -44,7 +44,7 @@ TRAINING_CONFIGS = {
         "temperature_variable": "dT",
         "sampling": {
             "method": "atmospheric",
-            "p_range": [1.0, 1.05e5],
+            "p_range": [1.0, 1.1e5],
             "N_samples": 2000,
             "pressure_weight": 0.5,
         },
