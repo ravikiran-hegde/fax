@@ -74,6 +74,10 @@ class SingleSpeciesModel(ABC):
                 ],  # output adds frequency dim
                 dask="parallelized",
                 output_dtypes=[float],
+                # frequency is created by the call, so dask cannot infer its size
+                dask_gufunc_kwargs={
+                    "output_sizes": {"frequency": len(self.config.frequency_grid)}
+                },
             )
         return xsec.assign_coords(frequency=self.config.frequency_grid).expand_dims(
             species=[str(self.config.species)], axis=0

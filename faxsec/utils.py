@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+from functools import cache
+from itertools import count
 from pathlib import Path
 from typing import Any, Optional, Sequence, Tuple
 
@@ -144,6 +146,79 @@ def simple_vmr_profile(
 # -----------------------------
 # ARTS related utilities and adapters
 # -----------------------------
+# ARTS working memory per (case, frequency) of one call, measured on a
+# 100k-point H2O reference.
+_ARTS_BYTES_PER_CASE_FREQ = 80
+DEFAULT_REFERENCE_MEMORY_BUDGET = 1 << 30  # 1 GiB of ARTS working memory
+
+
+def _reference_dataset(
+    species: str,
+    frequency_grid: np.ndarray,
+    pressure: np.ndarray,
+    temperature: np.ndarray,
+    vmr: np.ndarray,
+    arts_tag: tuple[str, ...] | None = None,
+    case_chunk: int | None = None,
+    memory_budget: int = DEFAULT_REFERENCE_MEMORY_BUDGET,
+) -> xr.Dataset:
+    """Reference cross-sections as a dataset of unevaluated case blocks."""
+
+    if case_chunk is None:
+        per_case = frequency_grid.size * _ARTS_BYTES_PER_CASE_FREQ
+        case_chunk = int(np.clip(memory_budget // per_case, 1, pressure.size))
+    reference = xr.Dataset(
+        {
+            "pressure": ("case", pressure),
+            "temperature": ("case", temperature),
+            "vmr": ("case", vmr),
+        },
+        coords={"case": np.arange(pressure.size), "frequency": frequency_grid},
+    ).chunk({"case": case_chunk})
+
+    n_blocks = len(reference.chunksizes["case"])
+    logger.info(
+        "ARTS reference %s: %d cases x %d frequencies in %d block(s) of %d",
+        species,
+        pressure.size,
+        frequency_grid.size,
+        n_blocks,
+        case_chunk,
+    )
+
+    @cache
+    def absorber():
+        from .arts import ARTSAbsorber
+
+        return ARTSAbsorber(
+            species=species, frequency_grid=frequency_grid, arts_tag=arts_tag
+        )
+
+    block = count(1)
+
+    def cross_section(p: np.ndarray, t: np.ndarray, v: np.ndarray) -> np.ndarray:
+        logger.info(
+            "ARTS reference %s: block %d/%d (%d cases)",
+            species,
+            next(block),
+            n_blocks,
+            p.size,
+        )
+        return absorber().cross_section(pressure=p, temperature=t, vmr=v)
+
+    reference["xsec"] = xr.apply_ufunc(
+        cross_section,
+        reference["pressure"],
+        reference["temperature"],
+        reference["vmr"],
+        output_core_dims=[["frequency"]],
+        dask="parallelized",
+        output_dtypes=[float],
+        dask_gufunc_kwargs={"output_sizes": {"frequency": frequency_grid.size}},
+    )
+    return reference
+
+
 def calulate_arts_reference(
     species: str,
     frequency_grid: ArrayLike,
@@ -151,30 +226,19 @@ def calulate_arts_reference(
     temperature: np.ndarray,
     vmr: np.ndarray,
     arts_tag: tuple[str, ...] | None = None,
+    **block_kwargs: Any,
 ) -> xr.Dataset:
-    """Calculate reference cross-section dataset using ARTS."""
+    """Calculate reference cross-section dataset using ARTS, chunk by chunk."""
 
-    from .arts import ARTSAbsorber
-
-    absorber = ARTSAbsorber(
-        species=species,
-        frequency_grid=np.asarray(frequency_grid, dtype=float),
+    return _reference_dataset(
+        species,
+        np.asarray(frequency_grid, dtype=float),
+        np.asarray(pressure, dtype=float),
+        np.asarray(temperature, dtype=float),
+        np.asarray(vmr, dtype=float),
         arts_tag=arts_tag,
-    )
-
-    xsec = absorber.cross_section(pressure=pressure, temperature=temperature, vmr=vmr)
-    return xr.Dataset(
-        {
-            "xsec": (("case", "frequency"), xsec),
-            "pressure": (("case",), pressure),
-            "temperature": (("case",), temperature),
-            "vmr": (("case",), vmr),
-        },
-        coords={
-            "case": np.arange(pressure.size),
-            "frequency": frequency_grid,
-        },
-    )
+        **block_kwargs,
+    ).compute(scheduler="synchronous")
 
 
 def _slugify(value: Any) -> str:
@@ -213,7 +277,10 @@ def ensure_reference_dataset(
     ref_vmr: float = REF_VMR,
     force: bool = False,
 ) -> Path:
-    """Create or load the reference dataset required by FunctionalAbsorber.train()."""
+    """Create or load the reference dataset required by FunctionalAbsorber.train().
+
+    The reference is computed in blocks and written block by block
+    """
 
     if cache_path is None:
         cache_path = reference_cache_path(species=species, arts_tag=arts_tag)
@@ -222,7 +289,8 @@ def ensure_reference_dataset(
     sampling_kwargs = {} if sampling_kwargs is None else dict(sampling_kwargs)
 
     if cache_path.exists() and not force:
-        cached = xr.open_dataset(cache_path).attrs.get("sampling_kwargs")
+        with xr.open_dataset(cache_path) as cached_ds:
+            cached = cached_ds.attrs.get("sampling_kwargs")
         if cached is not None and cached != str(sampling_kwargs):
             logger.warning(
                 "Cached reference for %s was built with sampling %s, not %s; "
@@ -250,23 +318,36 @@ def ensure_reference_dataset(
         p_grid = np.append(p_grid, ref_pressure)
         t_grid = np.append(t_grid, ref_temperature)
 
-    reference_ds = calulate_arts_reference(
+    reference_ds = _reference_dataset(
         species,
-        frequency_grid,
+        np.asarray(frequency_grid, dtype=float),
         p_grid,
         t_grid,
         np.full_like(p_grid, ref_vmr, dtype=float),
         arts_tag=arts_tag,
         **arts_reference_kwargs,
     )
-
     reference_ds.attrs["sampling_kwargs"] = str(sampling_kwargs)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
-    reference_ds.to_netcdf(cache_path)
+
+    # Written chunk by chunk, under a temporary name so an interrupted run
+    # leaves no file that would be read back as a complete cache.
+    import dask
+
+    tmp_path = cache_path.with_suffix(".partial")
+    try:
+        with dask.config.set(scheduler="synchronous"):
+            reference_ds.to_netcdf(tmp_path, mode="w", compute=False).compute()
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
+    tmp_path.replace(cache_path)
+
     logger.info(
-        "Cached ARTS reference for %s: %d cases -> %s",
+        "Cached ARTS reference for %s: %d cases, %.2f GB -> %s",
         species,
         reference_ds.sizes.get("case", 0),
+        cache_path.stat().st_size / 1e9,
         cache_path,
     )
 
