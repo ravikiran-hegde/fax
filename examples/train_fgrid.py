@@ -236,9 +236,14 @@ kayser_sw = np.logspace(np.log10(wvn_min_sw), np.log10(wvn_max_sw), N_wvn_sw)
 f_grid_sw = kayser_to_hz(kayser_sw)
 
 train_cases = {
-    f"Highres_LW_{N_wvn_lw}": kayser_lw,
-    f"Highres_SW_{N_wvn_sw}": kayser_sw,
+    # f"Highres_LW_{N_wvn_lw}": kayser_lw,
+    # f"Highres_SW_{N_wvn_sw}": kayser_sw,
 }
+if "LW" in args.bands:
+    train_cases[f"Highres_LW_{N_wvn_lw}"] = kayser_lw
+if "SW" in args.bands:
+    train_cases[f"Highres_SW_{N_wvn_sw}"] = kayser_sw
+
 for case_name, kayser_grid in train_cases.items():
     frequency_grid = kayser_to_hz(kayser_grid)
 

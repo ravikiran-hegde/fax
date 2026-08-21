@@ -233,9 +233,9 @@ continuum = {
     ),
 }
 
-# ddq_loc = DATA_DIR / "ddq" / "Additional configurations"
+ddq_loc = DATA_DIR / "ddq" / "Additional configurations"
 # ddq_files = [
-#     ddq_loc / f"DDQ_{band}_{i}.h5" for band in ["LW", "SW"] for i in range(1, 9)
+#     ddq_loc / f"DDQ_{band}_{i}.h5" for band in args.bands.split(",") for i in range(1, 9)
 # ]
 ddq_files = [DATA_DIR / "ddq" / f"DDQ_{band}.h5" for band in args.bands.split(",")]
 
