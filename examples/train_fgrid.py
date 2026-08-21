@@ -1,11 +1,18 @@
 # %%
+import argparse
 import logging
 from pathlib import Path
 
 import numpy as np
 import xarray as xr
 
-from faxsec.constants import SELF_SCALING
+from faxsec.constants import (
+    REF_PRESSURE,
+    REF_TEMPERATURE,
+    REF_VMR,
+    REFERENCE_VMR,
+    SELF_SCALING,
+)
 from faxsec.functional import FunctionalAbsorber
 from faxsec.log_config import setup_logging
 from faxsec.utils import (
@@ -13,6 +20,7 @@ from faxsec.utils import (
     kayser_to_hz,
     rayleigh_xsec_stamnes_2017,
     reference_cache_path,
+    xsec_relevance_floor,
 )
 
 setup_logging()
@@ -21,12 +29,83 @@ logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 
+# Named training configurations. Each gives the reference point the fit is
+# anchored at and how the (p, T) training sample is drawn; bands may differ.
+TRAINING_CONFIGS = {
+    "legacy": {
+        "ref_pressure": REF_PRESSURE,
+        "ref_temperature": REF_TEMPERATURE,
+        "temperature_variable": "dT",
+        "sampling": {"method": "natural", "p_range": [0.01, 110000], "N_samples": 1000},
+    },
+    "atmospheric": {
+        "ref_pressure": 1.0e4,
+        "ref_temperature": 240.0,
+        "temperature_variable": "dT",
+        "sampling": {
+            "method": "atmospheric",
+            "p_range": [1.0, 1.1e5],
+            "N_samples": 2000,
+            "pressure_weight": 0.5,
+        },
+        # Shortwave surface flux is a column-transmission problem, so equal air
+        # mass per stratum is the natural design. The longwave emits from every
+        # layer and takes part of its OLR from the stratosphere, so it needs a
+        # compromise.
+        "bands": {
+            "LW": {"sampling": {"pressure_weight": 0.5}},
+            "SW": {"sampling": {"pressure_weight": 1.0}},
+        },
+    },
+}
+
+
+def band_config(config: dict, band: str) -> dict:
+    """Configuration for one band, with any band overrides merged in."""
+    resolved = {k: v for k, v in config.items() if k != "bands"}
+    resolved["sampling"] = dict(resolved["sampling"])
+    override = config.get("bands", {}).get(band, {})
+    for key, value in override.items():
+        if key == "sampling":
+            resolved["sampling"].update(value)
+        else:
+            resolved[key] = value
+    return resolved
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--suffix", default="", help="Suffix of the trained datatree to write"
+    )
+    parser.add_argument(
+        "--reference-suffix",
+        default=None,
+        help="Reference cache to train from (default: named after --config, "
+        "since the sampling configuration is what determines it)",
+    )
+    parser.add_argument("--bands", default="LW,SW")
+    parser.add_argument("--config", default="atmospheric", choices=TRAINING_CONFIGS)
+    return parser.parse_args()
+
+
+args = parse_args()
+suffix = args.suffix
+base_config = TRAINING_CONFIGS[args.config]
+reference_suffix = (
+    args.reference_suffix if args.reference_suffix is not None else f"_{args.config}"
+)
+
 
 def train_fax(
     species: str,
     arts_tag: tuple[str] | None,
     frequency_grid: np.ndarray,
     reference_cache_dir: str | Path,
+    sampling_kwargs: dict | None = None,
+    ref_pressure: float = REF_PRESSURE,
+    ref_temperature: float = REF_TEMPERATURE,
+    temperature_variable: str = "dT",
 ) -> FunctionalAbsorber:
     """Train a FAX model for a given species and frequency grid.
 
@@ -40,6 +119,8 @@ def train_fax(
         The directory to cache reference datasets, by default None.
     """
 
+    ref_vmr = REFERENCE_VMR.get(species, REF_VMR)
+
     ensure_reference_dataset(
         species=species,
         frequency_grid=frequency_grid,
@@ -49,6 +130,10 @@ def train_fax(
             arts_tag=arts_tag,
             cache_dir=reference_cache_dir,
         ),
+        ref_pressure=ref_pressure,
+        ref_temperature=ref_temperature,
+        ref_vmr=ref_vmr,
+        sampling_kwargs=sampling_kwargs,
     )
 
     func_abs = FunctionalAbsorber(
@@ -57,6 +142,11 @@ def train_fax(
         temperature_form_name="Rational",
         frequency_grid=frequency_grid,
         self_scaling=SELF_SCALING.get(species, 0.0),
+        xsec_floor=xsec_relevance_floor(species),
+        temperature_variable=temperature_variable,
+        ref_pressure=ref_pressure,
+        ref_temperature=ref_temperature,
+        ref_vmr=ref_vmr,
     )
 
     func_abs.train(
@@ -64,13 +154,16 @@ def train_fax(
             species=species,
             arts_tag=arts_tag,
             cache_dir=reference_cache_dir,
-        )
+        ),
+        max_iter=10,
+        sampling_kwargs=sampling_kwargs,
     )
 
     return func_abs
 
 
 # %% Train DDQ LW FAX models
+
 
 lines = {
     "LW": {
@@ -111,26 +204,10 @@ halocarbons = {
         "O3-XFIT": ("O3-XFIT",),
         "CFC11": ("CFC11-XFIT",),
         "CFC12": ("CFC12-XFIT",),
-        "HFC125": ("HFC125-XFIT",),
-        "HFC32": ("HFC32-XFIT",),
-        "CCL4": ("CCL4-XFIT",),
-        "HFC143A": ("HFC143A-XFIT",),
-        "HFC23": ("HFC23-XFIT",),
-        "CF4": ("CF4-XFIT",),
-        # "CFC22": ("CFC22-XFIT",),
-        "HFC134A": ("HFC134A-XFIT",),
     },
     "LW": {
         "CFC11": ("CFC11-XFIT",),
         "CFC12": ("CFC12-XFIT",),
-        "HFC125": ("HFC125-XFIT",),
-        "HFC32": ("HFC32-XFIT",),
-        "CCL4": ("CCL4-XFIT",),
-        "HFC143A": ("HFC143A-XFIT",),
-        "HFC23": ("HFC23-XFIT",),
-        "CF4": ("CF4-XFIT",),
-        # "CFC22": ("CFC22-XFIT",),
-        "HFC134A": ("HFC134A-XFIT",),
     },
 }
 
@@ -159,7 +236,7 @@ kayser_sw = np.logspace(np.log10(wvn_min_sw), np.log10(wvn_max_sw), N_wvn_sw)
 f_grid_sw = kayser_to_hz(kayser_sw)
 
 train_cases = {
-    # f"Highres_LW_{N_wvn_lw}": kayser_lw,
+    f"Highres_LW_{N_wvn_lw}": kayser_lw,
     f"Highres_SW_{N_wvn_sw}": kayser_sw,
 }
 for case_name, kayser_grid in train_cases.items():
@@ -175,13 +252,21 @@ for case_name, kayser_grid in train_cases.items():
         frequency_grid.size,
     )
 
+    config = band_config(base_config, band)
+    sampling_kwargs = config["sampling"]
+    reference_cache_dir = DATA_DIR / "reference" / f"{case_name}{reference_suffix}"
+
     # lines
     for sp in lines[band].keys():
         func_abs = train_fax(
             species=sp,
             arts_tag=lines[band][sp],
             frequency_grid=frequency_grid,
-            reference_cache_dir=DATA_DIR / "reference" / case_name,
+            reference_cache_dir=reference_cache_dir,
+            sampling_kwargs=sampling_kwargs,
+            ref_pressure=config["ref_pressure"],
+            ref_temperature=config["ref_temperature"],
+            temperature_variable=config["temperature_variable"],
         )
         absorbers[sp] = func_abs
 
@@ -261,8 +346,13 @@ for case_name, kayser_grid in train_cases.items():
         datatree[key] = ds
 
     datatree["Other"] = other
-
-    output_path = DATA_DIR / "ff" / f"gas_optics_{case_name}.nc"
+    datatree.attrs.update(
+        reference_cache=str(reference_cache_dir),
+        suffix=suffix,
+        training_config=args.config,
+        config_detail=str(config),
+    )
+    output_path = DATA_DIR / "ff" / f"gas_optics_{case_name}{suffix}.nc"
     datatree.to_netcdf(output_path, mode="w")
     logger.info("Saved %s: %d absorbers -> %s", case_name, len(absorbers), output_path)
 
