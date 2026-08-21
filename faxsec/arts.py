@@ -25,7 +25,7 @@ PYARTS_VERSION = "3.0.0dev10"
 def species_from_tag(tag: str) -> str:
     """Return base species name from an absorption tag.
 
-    Tags may include isotopologues or models (e.g. "H2O-161", "H2O,ForeignCont").
+    Tags may include isotopologues or models (e.g. "H2O-161", "H2O-ForeignContCKDMT400").
     """
 
     return tag.split(",")[0].split("-")[0]
@@ -44,7 +44,7 @@ class ARTSAbsorber(SingleSpeciesModel):
 
     Builds one Workspace per absorption tag and evaluates the whole stack of
     atmospheric points in a single ``spectral_propmat_pathFromPath`` call per
-    tag, instead of looping point-by-point in Python.
+    tag.
     """
 
     config: ARTSConfig
