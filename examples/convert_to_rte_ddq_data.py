@@ -1,9 +1,30 @@
 # %%
 
+import argparse
+from pathlib import Path
+
 import xarray as xr
 
 from faxsec.constants import CM_TO_M, LIGHT_SPEED
 from faxsec.utils import hz_to_kayser
+
+ROOT = Path(__file__).resolve().parents[1]
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--suffix", default="", help="Trained datatree suffix to convert")
+parser.add_argument("--out-dir", default=Path("/Users/rk/Work/ddq-data"), type=Path)
+args = parser.parse_args()
+args.out_dir.mkdir(parents=True, exist_ok=True)
+
+# Model variables the Fortran reader does not consume; the file layout is fixed.
+DROP_VARS = [
+    "temperature_coeffs",
+    "t_order",
+    "fax_vmr0",
+    "x_p_range",
+    "x_t_range",
+    "bound",
+]
 
 
 def clear_all_attrs(ds):
@@ -17,6 +38,60 @@ def clear_all_attrs(ds):
 def pad_species_names(da, width=32):
     """Right-pad a string DataArray with spaces to a fixed width (Fortran-style)."""
     return da.str.pad(width=width, side="right", fillchar=" ")
+
+
+def verify_against_model(flat, datatree, band):
+    """Rebuild cross-sections from the flat variables and check they match.
+
+    This is the Fortran contract: a reordered coefficient or a misnamed term
+    would leave the file structurally valid but numerically wrong.
+
+    Checked inside the fitted domain only. The file carries no valid range, so
+    a reader that evaluates outside it extrapolates where the python model
+    holds the boundary value.
+    """
+    import numpy as np
+
+    from faxsec.gas_optics import GasOptics
+
+    absorbers = GasOptics.from_datatree(datatree).absorbers
+    p = np.geomspace(1.0, 1.0e5, 17)
+    t = np.linspace(190.0, 300.0, 17)
+    vmr = np.full_like(p, 1e-9)
+
+    worst = 0.0
+    for i, name in enumerate(flat["fax_species_names"].values):
+        species = name.decode().strip().upper()
+        model = absorbers[f"{species}_Hinge_Rational"]
+        c = flat["fax_c"].isel(fax_nspecies=i).values.T  # (term, nu)
+        a = flat["fax_a"].isel(fax_nspecies=i).values.T
+        b = flat["fax_b"].isel(fax_nspecies=i).values.T
+
+        x_p = np.log(
+            p * (1.0 + vmr * float(flat["fax_S"].isel(fax_nspecies=i)))
+            / float(flat["fax_p0"].isel(fax_nspecies=i))
+        )
+        x_t = t - float(flat["fax_T0"].isel(fax_nspecies=i))
+        if model.coeffs.x_p_range is not None:
+            x_p = np.clip(x_p, *model.coeffs.x_p_range)
+            x_t = np.clip(x_t, *model.coeffs.x_t_range)
+        x_p, x_t = x_p[:, None], x_t[:, None]
+
+        hinge = c[0] + c[1] * np.minimum(x_p, c[3]) + c[2] * np.maximum(x_p - c[3], 0.0)
+        powers_t = np.stack([x_t**k for k in range(3)], axis=0)  # (term, point, 1)
+        rational = (powers_t * a[:, None, :]).sum(0) / (powers_t * b[:, None, :]).sum(0)
+        rebuilt = flat["fax_sigma0"].isel(fax_nspecies=i).values * np.exp(hinge + rational)
+
+        reference = model.cross_section(p, t, vmr)
+        finite = (reference > 1e-40) & np.isfinite(rebuilt)
+        worst = max(
+            worst,
+            float(np.abs(np.log(rebuilt[finite]) - np.log(reference[finite])).max()),
+        )
+
+    if worst > 1e-8:
+        raise AssertionError(f"{band}: flat file disagrees with the model by {worst:.2e}")
+    print(f"{band}: flat file reproduces the model (max |dln xsec| = {worst:.1e})")
 
 
 def apply_variable_attrs(ds, metadata):
@@ -210,7 +285,7 @@ VARIABLE_ATTRS = {
 # =============================================================================
 # %%Longwave
 # =============================================================================
-data_lw = xr.open_datatree("../data/ff/gas_optics_DDQ_LW.nc").copy()
+data_lw = xr.open_datatree(ROOT / f"data/ff/gas_optics_DDQ_LW{args.suffix}.nc").copy()
 # ---- Hinge rational ---------------------------------------------------------
 
 lines = data_lw["Hinge_Rational"].to_dataset().rename(LINE_RENAME)
@@ -236,7 +311,7 @@ rest = (
 
 lines["fax_b"] = xr.concat([ones, rest], dim="fax_t_order")
 
-lines = lines.drop_vars(["temperature_coeffs", "t_order", "fax_vmr0"])
+lines = lines.drop_vars(DROP_VARS, errors="ignore")
 
 # ---- MTCKD ------------------------------------------------------------------
 cont = data_lw["both_continuum_MT_CKD_4_0"].to_dataset().rename(CONT_RENAME)
@@ -299,14 +374,15 @@ for vars in ["xsec_species_names", "fax_species_names", "mtckd_species_names"]:
 
 gas_optics_lw = apply_variable_attrs(gas_optics_lw, VARIABLE_ATTRS)
 
-gas_optics_lw.to_netcdf("/Users/rk/Work/ddq-data/gas_optics_lw.nc")
+verify_against_model(gas_optics_lw, data_lw, "LW")
+gas_optics_lw.to_netcdf(args.out_dir / "gas_optics_lw.nc")
 
 
 # =============================================================================
 # %% Shortwave
 # =============================================================================
 
-data_sw = xr.open_datatree("../data/ff/gas_optics_DDQ_SW.nc").copy()
+data_sw = xr.open_datatree(ROOT / f"data/ff/gas_optics_DDQ_SW{args.suffix}.nc").copy()
 
 # ---- Hinge rational ---------------------------------------------------------
 
@@ -333,7 +409,7 @@ rest = (
 
 lines["fax_b"] = xr.concat([ones, rest], dim="fax_t_order")
 
-lines = lines.drop_vars(["temperature_coeffs", "t_order", "fax_vmr0"])
+lines = lines.drop_vars(DROP_VARS, errors="ignore")
 
 # ---- MTCKD ------------------------------------------------------------------
 
@@ -409,7 +485,8 @@ for vars in ["xsec_species_names", "fax_species_names", "mtckd_species_names"]:
 
 gas_optics_sw = apply_variable_attrs(gas_optics_sw, VARIABLE_ATTRS)
 
-gas_optics_sw.to_netcdf("/Users/rk/Work/ddq-data/gas_optics_sw.nc")
+verify_against_model(gas_optics_sw, data_sw, "SW")
+gas_optics_sw.to_netcdf(args.out_dir / "gas_optics_sw.nc")
 
 # %%
 # %%
