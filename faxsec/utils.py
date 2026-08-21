@@ -481,13 +481,13 @@ def sample_atmospheres_natural(
 # Temperature range the atmosphere actually occupies, as
 # (pressure [Pa], T_min [K], T_max [K]) knots interpolated in log-pressure.
 ATMOSPHERIC_T_ENVELOPE = (
-    (1.0, 165.0, 245.0),
+    (1.0, 150.0, 250.0),
     (10.0, 190.0, 290.0),
     (100.0, 185.0, 315.0),
     (1.0e3, 160.0, 290.0),
-    (1.0e4, 165.0, 260.0),
+    (1.0e4, 160.0, 260.0),
     (3.0e4, 170.0, 280.0),
-    (1.0e5, 195.0, 330.0),
+    (1.0e5, 195.0, 350.0),
 )
 
 
