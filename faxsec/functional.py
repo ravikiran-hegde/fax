@@ -261,21 +261,21 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
             p_pred = self.pressure_form.evaluate(x_p, p_coeffs)
 
             residual -= p_pred  # residual is now target - p - t
-            rss = float(np.einsum("ij,ij,ij->", weights, residual, residual))
+            rss = np.einsum("ij,ij,ij->j", weights, residual, residual)
 
             self.coeffs.pressure_coeffs = p_coeffs
             self.coeffs.temperature_coeffs = t_coeffs
 
-            logger.debug("  iter %d/%d: rss=%.6g", iteration + 1, max_iter, rss)
+            logger.debug("  iter %d/%d: rss=%.6g", iteration + 1, max_iter, rss.sum())
 
-            if iteration > 0 and (prev_rss - rss) / prev_rss < 1e-10:
+            if iteration > 0 and np.all(prev_rss - rss < 1e-10 * prev_rss):
                 logger.info(
-                    "Converged after %d iterations (rss=%.6g)", iteration + 1, rss
+                    "Converged after %d iterations (rss=%.6g)", iteration + 1, rss.sum()
                 )
                 break
             prev_rss = rss
         else:
-            logger.info("Reached max_iter=%d (rss=%.6g)", max_iter, rss)
+            logger.info("Reached max_iter=%d (rss=%.6g)", max_iter, rss.sum())
 
         # Self-broadening raises the effective pressure above anything in the
         # reference, which is built at ref_vmr, so the valid range must allow
@@ -288,7 +288,7 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
         self.coeffs.x_p_range = np.array([x_p.min(), x_p.max() + self_broadening])
         self.coeffs.x_t_range = np.array([x_t.min(), x_t.max()])
 
-        return rss
+        return float(rss.sum())
 
     def to_dataset(self) -> xr.Dataset:
 
