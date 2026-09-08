@@ -24,7 +24,6 @@ from faxsec.utils import (
     xsec_relevance_floor,
 )
 
-setup_logging()
 logger = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -95,18 +94,19 @@ def parse_args() -> argparse.Namespace:
         "%(default)s). Larger chunks keep ARTS better parallelised; the "
         "reference itself is streamed to disk either way.",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="Processes fitting frequency chunks in parallel (default: all cores)",
+    )
+    parser.add_argument(
+        "--frequency-chunk",
+        type=int,
+        default=2000,
+        help="Frequencies fitted per process (default: %(default)s)",
+    )
     return parser.parse_args()
-
-
-args = parse_args()
-if args.reference_memory <= 0:
-    raise SystemExit("--reference-memory must be positive")
-reference_memory_budget = int(args.reference_memory * 1e9)  # bytes, as faxsec wants
-suffix = args.suffix
-base_config = TRAINING_CONFIGS[args.config]
-reference_suffix = (
-    args.reference_suffix if args.reference_suffix is not None else f"_{args.config}"
-)
 
 
 def train_fax(
@@ -119,6 +119,9 @@ def train_fax(
     ref_temperature: float = REF_TEMPERATURE,
     temperature_variable: str = "dT",
     memory_budget: int = DEFAULT_REFERENCE_MEMORY_BUDGET,
+    save_path: str | Path | None = None,
+    frequency_chunk: int = 2000,
+    n_workers: int | None = None,
 ) -> FunctionalAbsorber:
     """Train a FAX model for a given species and frequency grid.
 
@@ -132,6 +135,9 @@ def train_fax(
         The directory to cache reference datasets, by default None.
     memory_budget : int, optional
         Bytes of ARTS working memory per reference chunk.
+    save_path : Path | None, optional
+        File the fitted coefficients are written to as chunks finish; chunks
+        already in it are not refitted.
     """
 
     ref_vmr = REFERENCE_VMR.get(species, REF_VMR)
@@ -165,15 +171,17 @@ def train_fax(
         ref_vmr=ref_vmr,
     )
 
-    # func_abs.train(
-    #     reference_xsec=reference_cache_path(
-    #         species=species,
-    #         arts_tag=arts_tag,
-    #         cache_dir=reference_cache_dir,
-    #     ),
-    #     max_iter=10,
-    #     sampling_kwargs=sampling_kwargs,
-    # )
+    func_abs.train_in_frequency_chunks(
+        reference_xsec=reference_cache_path(
+            species=species,
+            arts_tag=arts_tag,
+            cache_dir=reference_cache_dir,
+        ),
+        frequency_chunk=frequency_chunk,
+        n_workers=n_workers,
+        save_path=save_path,
+        max_iter=10,
+    )
 
     return func_abs
 
@@ -251,131 +259,153 @@ N_wvn_sw = 100_001
 kayser_sw = np.logspace(np.log10(wvn_min_sw), np.log10(wvn_max_sw), N_wvn_sw)
 f_grid_sw = kayser_to_hz(kayser_sw)
 
-train_cases = {
-    # f"Highres_LW_{N_wvn_lw}": kayser_lw,
-    # f"Highres_SW_{N_wvn_sw}": kayser_sw,
-}
-if "LW" in args.bands:
-    train_cases[f"Highres_LW_{N_wvn_lw}"] = kayser_lw
-if "SW" in args.bands:
-    train_cases[f"Highres_SW_{N_wvn_sw}"] = kayser_sw
-
-for case_name, kayser_grid in train_cases.items():
-    frequency_grid = kayser_to_hz(kayser_grid)
-
-    absorbers = {}
-    band = case_name.split("_")[1][:2]  # Extract the band (LW or SW) from the case name
-
-    logger.info(
-        "Training gas optics for %s (band=%s): %d frequency points",
-        case_name,
-        band,
-        frequency_grid.size,
+# Workers re-import this module, so nothing below may run on import.
+def main() -> None:
+    setup_logging()
+    args = parse_args()
+    if args.reference_memory <= 0:
+        raise SystemExit("--reference-memory must be positive")
+    reference_memory_budget = int(args.reference_memory * 1e9)  # bytes, as faxsec wants
+    suffix = args.suffix
+    base_config = TRAINING_CONFIGS[args.config]
+    reference_suffix = (
+        args.reference_suffix
+        if args.reference_suffix is not None
+        else f"_{args.config}"
     )
 
-    config = band_config(base_config, band)
-    sampling_kwargs = config["sampling"]
-    reference_cache_dir = DATA_DIR / "reference" / f"{case_name}{reference_suffix}"
+    train_cases = {
+        # f"Highres_LW_{N_wvn_lw}": kayser_lw,
+        # f"Highres_SW_{N_wvn_sw}": kayser_sw,
+    }
+    if "LW" in args.bands:
+        train_cases[f"Highres_LW_{N_wvn_lw}"] = kayser_lw
+    if "SW" in args.bands:
+        train_cases[f"Highres_SW_{N_wvn_sw}"] = kayser_sw
 
-    # lines
-    for sp in lines[band].keys():
-        func_abs = train_fax(
-            species=sp,
-            arts_tag=lines[band][sp],
-            frequency_grid=frequency_grid,
-            reference_cache_dir=reference_cache_dir,
-            sampling_kwargs=sampling_kwargs,
-            ref_pressure=config["ref_pressure"],
-            ref_temperature=config["ref_temperature"],
-            temperature_variable=config["temperature_variable"],
-            memory_budget=reference_memory_budget,
-        )
-        # absorbers[sp] = func_abs
+    for case_name, kayser_grid in train_cases.items():
+        frequency_grid = kayser_to_hz(kayser_grid)
 
-    # halocarbons
-    from faxsec.xfit import CrossFitAbsorber
+        absorbers = {}
+        band = case_name.split("_")[1][:2]  # Extract the band (LW or SW) from the case name
 
-    for sp in halocarbons[band].keys():
-        func_abs = CrossFitAbsorber(
-            species=sp,
-            frequency_grid=frequency_grid,
-            data_source=DATA_DIR / "halocarbon" / f"{sp.split('-')[0]}-XFIT.xml",
-        )
-        absorbers[sp] = func_abs
-
-    # continuum
-    from faxsec.continuum import H2OContinuum
-
-    for sp in continuum.keys():
-        absorbers[f"{sp}_continuum"] = H2OContinuum(
-            frequency_grid=frequency_grid,
-            data_source=DATA_DIR / "continuum" / "absco-ref_wv-mt-ckd400.nc",
+        logger.info(
+            "Training gas optics for %s (band=%s): %d frequency points",
+            case_name,
+            band,
+            frequency_grid.size,
         )
 
-    # quadrature related data
-    other = xr.Dataset(
-        {
-            "kayser_grid": ("frequency", kayser_grid),
-        }
-    )
-    if band == "SW":
-        import pyarts3
+        config = band_config(base_config, band)
+        sampling_kwargs = config["sampling"]
+        reference_cache_dir = DATA_DIR / "reference" / f"{case_name}{reference_suffix}"
+        species_dir = DATA_DIR / "ff" / f"species_{case_name}{suffix}"
+        species_dir.mkdir(parents=True, exist_ok=True)
 
-        # solar source
-        solar_source_file = DATA_DIR / "solar_spectra" / "solar_spectrum_July_2008.xml"
-        solar_source = (
-            pyarts3.xml.load(
-                str(solar_source_file),
+        # lines
+        for sp in lines[band].keys():
+            func_abs = train_fax(
+                species=sp,
+                arts_tag=lines[band][sp],
+                frequency_grid=frequency_grid,
+                reference_cache_dir=reference_cache_dir,
+                sampling_kwargs=sampling_kwargs,
+                ref_pressure=config["ref_pressure"],
+                ref_temperature=config["ref_temperature"],
+                temperature_variable=config["temperature_variable"],
+                memory_budget=reference_memory_budget,
+                save_path=species_dir / f"{sp}.nc",
+                frequency_chunk=args.frequency_chunk,
+                n_workers=args.workers,
             )
-            .to_xarray()
-            .rename({"Frequencys": "frequency"})
-        )
-        solar_source = xr.Dataset(
-            {"spectral_solar_radiance": (("frequency",), solar_source.values[:, 0])},
-            coords={"frequency": solar_source.frequency},
-        ).interp(frequency=frequency_grid, method="cubic")
+            # absorbers[sp] = func_abs
 
-        total_solar_irradiance = 1361.0  # W/m^2
-        other["spectral_solar_irradiance"] = (
-            total_solar_irradiance
-            * solar_source["spectral_solar_radiance"]
-            / np.trapezoid(
-                solar_source["spectral_solar_radiance"].values,
-                x=solar_source.frequency.values,
+        # halocarbons
+        from faxsec.xfit import CrossFitAbsorber
+
+        for sp in halocarbons[band].keys():
+            func_abs = CrossFitAbsorber(
+                species=sp,
+                frequency_grid=frequency_grid,
+                data_source=DATA_DIR / "halocarbon" / f"{sp.split('-')[0]}-XFIT.xml",
             )
+            absorbers[sp] = func_abs
+
+        # continuum
+        from faxsec.continuum import H2OContinuum
+
+        for sp in continuum.keys():
+            absorbers[f"{sp}_continuum"] = H2OContinuum(
+                frequency_grid=frequency_grid,
+                data_source=DATA_DIR / "continuum" / "absco-ref_wv-mt-ckd400.nc",
+            )
+
+        # quadrature related data
+        other = xr.Dataset(
+            {
+                "kayser_grid": ("frequency", kayser_grid),
+            }
         )
-        other["spectral_solar_irradiance"].attrs["source"] = str(solar_source_file)
+        if band == "SW":
+            import pyarts3
 
-        # rayleigh scattering cross-section
-        rayleigh_xsec = rayleigh_xsec_stamnes_2017(frequency_grid)
-        other["xsec_rayleigh"] = ("frequency", rayleigh_xsec)
-        other["xsec_rayleigh"].attrs["source"] = "Stamnes et al. 2017"
+            # solar source
+            solar_source_file = DATA_DIR / "solar_spectra" / "solar_spectrum_July_2008.xml"
+            solar_source = (
+                pyarts3.xml.load(
+                    str(solar_source_file),
+                )
+                .to_xarray()
+                .rename({"Frequencys": "frequency"})
+            )
+            solar_source = xr.Dataset(
+                {"spectral_solar_radiance": (("frequency",), solar_source.values[:, 0])},
+                coords={"frequency": solar_source.frequency},
+            ).interp(frequency=frequency_grid, method="cubic")
 
-    other.attrs["model_class"] = "Other"
+            total_solar_irradiance = 1361.0  # W/m^2
+            other["spectral_solar_irradiance"] = (
+                total_solar_irradiance
+                * solar_source["spectral_solar_radiance"]
+                / np.trapezoid(
+                    solar_source["spectral_solar_radiance"].values,
+                    x=solar_source.frequency.values,
+                )
+            )
+            other["spectral_solar_irradiance"].attrs["source"] = str(solar_source_file)
 
-    # all data together
-    datatree = xr.DataTree()
-    datasets = [absorber.to_dataset() for absorber in absorbers.values()]
-    groups = {}
-    for ds in datasets:
-        key = ds.attrs["model_class"]
-        if key in groups:
-            groups[key] = xr.concat([groups[key], ds], dim="species")
-        else:
-            groups[key] = ds
+            # rayleigh scattering cross-section
+            rayleigh_xsec = rayleigh_xsec_stamnes_2017(frequency_grid)
+            other["xsec_rayleigh"] = ("frequency", rayleigh_xsec)
+            other["xsec_rayleigh"].attrs["source"] = "Stamnes et al. 2017"
 
-    for key, ds in groups.items():
-        datatree[key] = ds
+        other.attrs["model_class"] = "Other"
 
-    datatree["Other"] = other
-    datatree.attrs.update(
-        reference_cache=str(reference_cache_dir),
-        suffix=suffix,
-        training_config=args.config,
-        config_detail=str(config),
-    )
-    output_path = DATA_DIR / "ff" / f"gas_optics_{case_name}{suffix}.nc"
-    datatree.to_netcdf(output_path, mode="w")
-    logger.info("Saved %s: %d absorbers -> %s", case_name, len(absorbers), output_path)
+        # all data together
+        datatree = xr.DataTree()
+        datasets = [absorber.to_dataset() for absorber in absorbers.values()]
+        groups = {}
+        for ds in datasets:
+            key = ds.attrs["model_class"]
+            if key in groups:
+                groups[key] = xr.concat([groups[key], ds], dim="species")
+            else:
+                groups[key] = ds
 
-# %%
+        for key, ds in groups.items():
+            datatree[key] = ds
+
+        datatree["Other"] = other
+        datatree.attrs.update(
+            reference_cache=str(reference_cache_dir),
+            suffix=suffix,
+            training_config=args.config,
+            config_detail=str(config),
+        )
+        output_path = DATA_DIR / "ff" / f"gas_optics_{case_name}{suffix}.nc"
+        datatree.to_netcdf(output_path, mode="w")
+        logger.info("Saved %s: %d absorbers -> %s", case_name, len(absorbers), output_path)
+
+
+if __name__ == "__main__":
+    main()

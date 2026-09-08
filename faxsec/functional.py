@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import asdict, dataclass
+from multiprocessing import get_context
 from pathlib import Path
 from typing import Optional
 
@@ -290,6 +292,76 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
 
         return float(rss.sum())
 
+    def train_in_frequency_chunks(
+        self,
+        reference_xsec: str | Path,
+        frequency_chunk: int = 2000,
+        n_workers: Optional[int] = None,
+        save_path: Optional[str | Path] = None,
+        **train_kwargs,
+    ) -> None:
+        """Fit the frequency grid in chunks, one process per chunk.
+
+        Frequencies are fitted independently, so each chunk is a full training
+        run over its own slice of the reference. Chunks already present in
+        ``save_path`` are not refitted, and the file is rewritten as each one
+        arrives.
+        """
+
+        grid = np.asarray(self.config.frequency_grid, dtype=float)
+        chunks = [
+            slice(start, min(start + frequency_chunk, grid.size))
+            for start in range(0, grid.size, frequency_chunk)
+        ]
+        concat = dict(
+            dim="frequency", data_vars="minimal", coords="minimal", compat="override"
+        )
+
+        parts = []
+        if save_path is not None and Path(save_path).exists():
+            with xr.open_dataset(save_path) as saved:
+                parts.append(saved.load())
+            chunks = [
+                chunk
+                for chunk in chunks
+                if not np.isin(grid[chunk], parts[0]["frequency"].values).all()
+            ]
+
+        logger.info(
+            "Training %s in %d chunk(s) of %d frequencies on %s workers",
+            self.config.species,
+            len(chunks),
+            frequency_chunk,
+            n_workers or "all",
+        )
+
+        config = asdict(self.config)
+        with ProcessPoolExecutor(
+            max_workers=n_workers, mp_context=get_context("spawn")
+        ) as pool:
+            futures = [
+                pool.submit(
+                    _train_frequency_chunk,
+                    {**config, "frequency_grid": grid[chunk]},
+                    str(reference_xsec),
+                    chunk,
+                    train_kwargs,
+                )
+                for chunk in chunks
+            ]
+            for fitted, future in enumerate(as_completed(futures), 1):
+                parts.append(future.result())
+                logger.info(
+                    "%s: %d/%d chunks fitted", self.config.species, fitted, len(chunks)
+                )
+                if save_path is not None:
+                    tmp_path = Path(save_path).with_suffix(".partial")
+                    xr.concat(parts, **concat).sortby("frequency").to_netcdf(tmp_path)
+                    tmp_path.replace(save_path)
+
+        trained = xr.concat(parts, **concat).sortby("frequency")
+        self.coeffs = FunctionalAbsorber.from_dataset(trained.isel(species=0)).coeffs
+
     def to_dataset(self) -> xr.Dataset:
 
         ds = xr.Dataset(
@@ -445,3 +517,16 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
             )
 
         return source
+
+
+def _train_frequency_chunk(
+    config: dict, reference_xsec: str, chunk: slice, train_kwargs: dict
+) -> xr.Dataset:
+    """Fit one slice of the frequency grid, in a worker process."""
+
+    absorber = FunctionalAbsorber(**config)
+    with xr.open_dataset(reference_xsec) as reference:
+        absorber.train(
+            reference_xsec=reference.isel(frequency=chunk).load(), **train_kwargs
+        )
+    return absorber.to_dataset()
