@@ -1,17 +1,24 @@
 """Compute LW+SW radiative fluxes for one atmosphere test case.
 
-Supports three interchangeable gas-optics backends:
+Supports multiple interchangeable gas-optics backends:
 
-- ``fax``    -- the trained FAX functional-form model, loaded from a saved
-                ``GasOptics`` datatree (``data/ff/gas_optics_DDQ_{LW,SW}*.nc``).
-- ``arts``   -- the same DDQ frequency/weight quadrature, but with every
-                absorber evaluated online through ARTS (no training stage).
-- ``rrtmgp`` -- RRTMGP's own G-point gas optics, as an independent reference.
+- ``fax``          -- the trained FAX functional-form model, loaded from a
+                       saved ``GasOptics`` datatree
+                       (``data/ff/gas_optics_DDQ_{LW,SW}*.nc``).
+- ``fax-highres``  -- FAX trained directly on a dense frequency grid instead
+                       of the DDQ quadrature
+                       (``data/ff/gas_optics_Highres_{LW_100000,SW_100001}.nc``).
+- ``arts``         -- the same DDQ frequency/weight quadrature, but with
+                       every absorber evaluated online through ARTS (no
+                       training stage).
+- ``rrtmgp``       -- RRTMGP's own G-point gas optics, as an independent
+                       reference.
 
 Run on a full case, or narrow it down to one variant and/or a slice of
 columns for a quick check:
 
     python rte_example.py --case rfmip --gas-optics fax
+    python rte_example.py --case rfmip --gas-optics fax-highres --variant 0 --columns 0:5
     python rte_example.py --case rfmip --gas-optics arts --variant 0 --columns 0:5
     python rte_example.py --case rce --gas-optics rrtmgp --columns 3
 
@@ -49,6 +56,12 @@ CASE_FILES = {
     "rfmip": EXAMPLE_DIR / "rfmip-states.nc",
     "ckdmip": EXAMPLE_DIR / "ckdmip-states.nc",
     "rce": EXAMPLE_DIR / "rce-states.nc",
+}
+
+# Dense-frequency-grid FAX datatrees, trained without a DDQ quadrature.
+HIGHRES_FILES = {
+    "LW": "gas_optics_Highres_LW_100000.nc",
+    "SW": "gas_optics_Highres_SW_100001.nc",
 }
 
 RENAME_DICT = {
@@ -193,10 +206,19 @@ def load_ddq_aux_data(band: str) -> xr.Dataset:
             .to_xarray()
             .rename({"Frequencys": "frequency"})
         )
-        solar_source = xr.Dataset(
-            {"spectral_solar_radiance": (("frequency",), solar_source.values[:, 0])},
-            coords={"frequency": solar_source.frequency},
-        ).interp(frequency=frequency_grid, method="cubic")
+        solar_source = (
+            xr.Dataset(
+                {
+                    "spectral_solar_radiance": (
+                        ("frequency",),
+                        solar_source.values[:, 0],
+                    )
+                },
+                coords={"frequency": solar_source.frequency},
+            )
+            .interp(frequency=frequency_grid, method="cubic")
+            .fillna(0.0)
+        )
 
         total_solar_irradiance = 1361.0
         ddq["spectral_solar_irradiance"] = (
@@ -231,6 +253,13 @@ def build_fax_gas_optics(band: str, suffix: str = "") -> tuple[GasOptics, xr.Dat
     return gas_optics, gas_optics_dt["DDQ"].to_dataset()
 
 
+def build_highres_gas_optics(band: str) -> tuple[GasOptics, xr.Dataset]:
+    """Load a FAX GasOptics trained directly on the dense Highres frequency grid."""
+    gas_optics_dt = xr.open_datatree(DATA_DIR / "ff" / HIGHRES_FILES[band.upper()])
+    gas_optics = GasOptics.from_datatree(gas_optics_dt)
+    return gas_optics, gas_optics_dt["Other"].to_dataset()
+
+
 def build_gas_optics(
     backend: str, band: str, suffix: str = ""
 ) -> tuple[GasOptics, xr.Dataset]:
@@ -238,8 +267,11 @@ def build_gas_optics(
         return build_arts_gas_optics(band)
     if backend == "fax":
         return build_fax_gas_optics(band, suffix)
+    if backend == "fax-highres":
+        return build_highres_gas_optics(band)
     raise ValueError(
-        f"'{backend}' is not a faxsec.GasOptics backend (use 'fax' or 'arts')"
+        f"'{backend}' is not a faxsec.GasOptics backend "
+        "(use 'fax', 'fax-highres', or 'arts')"
     )
 
 
@@ -374,7 +406,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--case", choices=sorted(CASE_FILES), default="rfmip")
     parser.add_argument(
-        "--gas-optics", choices=("fax", "arts", "rrtmgp"), default="fax"
+        "--gas-optics", choices=("fax", "fax-highres", "arts", "rrtmgp"), default="fax"
     )
     parser.add_argument(
         "--variant",
