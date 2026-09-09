@@ -318,7 +318,7 @@ def main() -> None:
                 frequency_chunk=args.frequency_chunk,
                 n_workers=args.workers,
             )
-            # absorbers[sp] = func_abs
+            absorbers[sp] = func_abs
 
         # halocarbons
         from faxsec.xfit import CrossFitAbsorber
@@ -340,11 +340,18 @@ def main() -> None:
                 data_source=DATA_DIR / "continuum" / "absco-ref_wv-mt-ckd400.nc",
             )
 
-        # quadrature related data
+        # trapezoidal integration weights over the (non-uniform) Hz frequency grid
+        weights_hz = np.empty_like(frequency_grid)
+        weights_hz[1:-1] = (frequency_grid[2:] - frequency_grid[:-2]) / 2
+        weights_hz[0] = (frequency_grid[1] - frequency_grid[0]) / 2
+        weights_hz[-1] = (frequency_grid[-1] - frequency_grid[-2]) / 2
+
         other = xr.Dataset(
             {
                 "kayser_grid": ("frequency", kayser_grid),
-            }
+                "weights_hz": ("frequency", weights_hz),
+            },
+            coords={"frequency": frequency_grid},
         )
         if band == "SW":
             import pyarts3
@@ -361,7 +368,7 @@ def main() -> None:
             solar_source = xr.Dataset(
                 {"spectral_solar_radiance": (("frequency",), solar_source.values[:, 0])},
                 coords={"frequency": solar_source.frequency},
-            ).interp(frequency=frequency_grid, method="cubic")
+            ).interp(frequency=frequency_grid, method="cubic").fillna(0.0)
 
             total_solar_irradiance = 1361.0  # W/m^2
             other["spectral_solar_irradiance"] = (
