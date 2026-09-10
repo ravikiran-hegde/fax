@@ -260,6 +260,23 @@ def build_highres_gas_optics(band: str) -> tuple[GasOptics, xr.Dataset]:
     return gas_optics, gas_optics_dt["Other"].to_dataset()
 
 
+def frequency_chunk_gas_optics(gas_optics: GasOptics, freq_slice: slice) -> GasOptics:
+    """A GasOptics restricted to a slice of the frequency grid.
+
+    Every absorber round-trips through to_dataset/from_dataset, which for
+    all faxsec absorber classes keeps species scalar and frequency indexed,
+    so slicing frequency there and rebuilding gives back a valid absorber
+    for just that chunk.
+    """
+    chunked = {}
+    for name, absorber in gas_optics.absorbers.items():
+        ds = absorber.to_dataset().isel(frequency=freq_slice)
+        if "species" in ds.dims:
+            ds = ds.isel(species=0)
+        chunked[name] = type(absorber).from_dataset(ds)
+    return GasOptics.from_absorbers(chunked)
+
+
 def build_gas_optics(
     backend: str, band: str, suffix: str = ""
 ) -> tuple[GasOptics, xr.Dataset]:
@@ -280,12 +297,57 @@ def compute_fluxes(
     band: str,
     gas_optics: GasOptics,
     ddq_aux: xr.Dataset,
+    frequency_chunk: int = 2000,
 ) -> xr.Dataset:
-    """LW or SW fluxes from a faxsec GasOptics (shared by the fax/arts backends)."""
+    """Broadband LW or SW fluxes from a faxsec GasOptics (shared by the fax/arts backends).
+
+    Solved in chunks along frequency and immediately summed to a running
+    broadband total, so the per-frequency optical properties and fluxes for
+    a dense grid (e.g. the 100000-point Highres grid) never all exist in
+    memory at once -- only one chunk's worth, plus the broadband total.
+    """
     band = band.lower()
     atm_ds = prepare_atmosphere(atm_ds, gas_optics.species)
     logger.info("%s: %s", band.upper(), profile_summary(atm_ds))
 
+    n_freq = ddq_aux.sizes["frequency"]
+    gas_optics_logger = logging.getLogger("faxsec.gas_optics")
+    previous_level = gas_optics_logger.level
+    if n_freq > frequency_chunk:
+        # rebuilding a chunk's GasOptics every iteration would otherwise log
+        # a "ready" summary per chunk, drowning out the rest of the run
+        gas_optics_logger.setLevel(logging.WARNING)
+
+    fluxes = None
+    try:
+        for start in range(0, n_freq, frequency_chunk):
+            freq_slice = slice(start, min(start + frequency_chunk, n_freq))
+            chunk_gas_optics = (
+                gas_optics
+                if frequency_chunk >= n_freq
+                else frequency_chunk_gas_optics(gas_optics, freq_slice)
+            )
+            chunk_fluxes = _solve_band_fluxes(
+                atm_ds, band, chunk_gas_optics, ddq_aux.isel(frequency=freq_slice)
+            )
+            fluxes = chunk_fluxes if fluxes is None else fluxes + chunk_fluxes
+            logger.debug(
+                "%s: frequencies %d-%d/%d done",
+                band.upper(),
+                freq_slice.start,
+                freq_slice.stop,
+                n_freq,
+            )
+    finally:
+        gas_optics_logger.setLevel(previous_level)
+
+    return fluxes
+
+
+def _solve_band_fluxes(
+    atm_ds: xr.Dataset, band: str, gas_optics: GasOptics, ddq_aux: xr.Dataset
+) -> xr.Dataset:
+    """Broadband flux for one frequency chunk (or the whole grid, for a single chunk)."""
     flat_ds = atm_ds.stack(atm_points=list(atm_ds["temperature_layer"].dims))
     optical_props = (
         gas_optics.optical_depth_from_ds(atmosphere_ds=flat_ds)
@@ -426,6 +488,14 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Filename suffix of the trained FAX datatree (only used by --gas-optics fax)",
     )
+    parser.add_argument(
+        "--frequency-chunk",
+        type=int,
+        default=2000,
+        help="Frequencies solved per chunk, immediately summed to a running "
+        "broadband total (default: %(default)s). Keeps a dense grid's "
+        "per-frequency fluxes from all existing in memory at once.",
+    )
     return parser.parse_args()
 
 
@@ -454,8 +524,12 @@ def main() -> None:
     else:
         gas_optics_lw, ddq_aux_lw = build_gas_optics(args.gas_optics, "LW", args.suffix)
         gas_optics_sw, ddq_aux_sw = build_gas_optics(args.gas_optics, "SW", args.suffix)
-        lw_fluxes = compute_fluxes(atm_ds, "lw", gas_optics_lw, ddq_aux_lw)
-        sw_fluxes = compute_fluxes(atm_ds, "sw", gas_optics_sw, ddq_aux_sw)
+        lw_fluxes = compute_fluxes(
+            atm_ds, "lw", gas_optics_lw, ddq_aux_lw, args.frequency_chunk
+        )
+        sw_fluxes = compute_fluxes(
+            atm_ds, "sw", gas_optics_sw, ddq_aux_sw, args.frequency_chunk
+        )
 
     fluxes = xr.merge([lw_fluxes, sw_fluxes], compat="equals", join="outer")
     add_net_flux(fluxes)
