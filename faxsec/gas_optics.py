@@ -9,7 +9,7 @@ from faxsec.abstract_class import ARRAYLIKE, SavableModel, SingleSpeciesModel
 from faxsec.arts import ARTSAbsorber
 from faxsec.constants import BOLTZMANN
 from faxsec.continuum import H2OContinuum
-from faxsec.functional import FunctionalAbsorber
+from faxsec.functional import FunctionalAbsorber, NoLogFunctionalAbsorber
 from faxsec.xfit import CrossFitAbsorber
 
 logger = logging.getLogger(__name__)
@@ -342,6 +342,7 @@ absorber_registry: Dict[str, Type[SingleSpeciesModel | SavableModel]] = {
     "ARTS_SingleSpeciesRecipe": ARTSAbsorber,
     "XFIT": CrossFitAbsorber,
     "Hinge_Rational": FunctionalAbsorber,
+    "NoLog_ShiftedReciprocalLaurent_Rational": NoLogFunctionalAbsorber,
     "both_continuum_MT_CKD_4_3": H2OContinuum,
     "both_continuum_MT_CKD_4_0": H2OContinuum,
 }
