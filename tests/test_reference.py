@@ -21,9 +21,11 @@ class StubAbsorber:
 
     def cross_section(self, pressure, temperature, vmr):
         StubAbsorber.calls.append(pressure.size)
-        return 1e-25 * np.exp(
-            np.log(pressure / 1e4)[:, None] + 0.0 * self.frequency_grid
-        ) * (temperature[:, None] / 250.0)
+        return (
+            1e-25
+            * np.exp(np.log(pressure / 1e4)[:, None] + 0.0 * self.frequency_grid)
+            * (temperature[:, None] / 250.0)
+        )
 
 
 def stub_arts(monkeypatch):
@@ -36,16 +38,19 @@ def stub_arts(monkeypatch):
 def test_case_chunk_fits_the_memory_budget():
     def chunk_for(n_freq, n_cases, budget=DEFAULT_REFERENCE_MEMORY_BUDGET):
         ds = _reference_dataset(
-            "H2O", np.linspace(1e13, 2e13, n_freq), np.ones(n_cases),
-            np.full(n_cases, 250.0), np.full(n_cases, 1e-4), memory_budget=budget,
+            "H2O",
+            np.linspace(1e13, 2e13, n_freq),
+            np.ones(n_cases),
+            np.full(n_cases, 250.0),
+            np.full(n_cases, 1e-4),
+            memory_budget=budget,
         )
         return max(ds["xsec"].chunksizes["case"])
 
     chunk = chunk_for(100_000, 2001)
     assert 1 < chunk < 2001
     assert (
-        chunk * 100_000 * _ARTS_BYTES_PER_CASE_FREQ
-        <= DEFAULT_REFERENCE_MEMORY_BUDGET
+        chunk * 100_000 * _ARTS_BYTES_PER_CASE_FREQ <= DEFAULT_REFERENCE_MEMORY_BUDGET
     )
     # Never split further than there are cases to compute.
     assert chunk_for(10, 8) == 8
@@ -174,8 +179,12 @@ def test_frequency_chunks_train_to_the_same_fit(tmp_path):
 
     def model():
         return FunctionalAbsorber(
-            species="H2O", frequency_grid=frequency, ref_pressure=pressure[0],
-            ref_temperature=temperature[0], ref_vmr=1e-4, xsec_floor=1e-40,
+            species="H2O",
+            frequency_grid=frequency,
+            ref_pressure=pressure[0],
+            ref_temperature=temperature[0],
+            ref_vmr=1e-4,
+            xsec_floor=1e-40,
         )
 
     whole = model()
