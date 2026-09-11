@@ -74,7 +74,7 @@ def test_sampling_kwargs_reach_the_reference_generator(tmp_path, monkeypatch):
             coords={"case": np.arange(pressure.size), "frequency": frequency_grid},
         )
 
-    monkeypatch.setattr("faxsec.utils.calulate_arts_reference", fake_reference)
+    monkeypatch.setattr("faxsec.utils._reference_dataset", fake_reference)
 
     for n_samples, name in ((200, "a"), (800, "b")):
         ensure_reference_dataset(
@@ -101,7 +101,7 @@ def test_stale_reference_cache_is_flagged(tmp_path, monkeypatch, caplog):
             coords={"case": np.arange(pressure.size), "frequency": frequency_grid},
         )
 
-    monkeypatch.setattr("faxsec.utils.calulate_arts_reference", fake_reference)
+    monkeypatch.setattr("faxsec.utils._reference_dataset", fake_reference)
     cache = tmp_path / "ref.nc"
     common = dict(species="H2O", frequency_grid=np.array([1e13]), cache_path=cache)
 
