@@ -10,6 +10,9 @@ from numpy.typing import ArrayLike
 
 logger = logging.getLogger(__name__)
 
+FIT_EPS = 1e-300  # keeps a reweighting division finite
+BIG_WEIGHT = 1e3  # turns the scale-fixing row of a fit into a constraint
+
 
 class FunctionalForm(ABC):
     """Base class for generic functional forms f(x)."""
@@ -20,17 +23,40 @@ class FunctionalForm(ABC):
 
     @abstractmethod
     def fit(
-        self, x: np.ndarray, y: np.ndarray, weights: np.ndarray | None = None
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        weights: np.ndarray | None = None,
+        x_ref: float | None = None,
     ) -> np.ndarray:
         """Fit coefficients to data y = f(x).
 
         ``weights`` is an optional (N, F) array of least-squares weights;
-        zero weight drops a sample from that frequency's fit.
+        zero weight drops a sample from that frequency's fit. ``x_ref``, when
+        given, constrains the fit to f(x_ref) = 1.
         """
 
     @abstractmethod
     def coefficient_names(self) -> List[str]:
         """Return ordered list of coefficient names."""
+
+    def rescale(self, coeffs: np.ndarray, factor: np.ndarray) -> np.ndarray:
+        """Return coefficients whose evaluation is ``factor`` times this one's."""
+        raise NotImplementedError(f"{type(self).__name__} cannot be rescaled")
+
+
+def anchored_lstsq(
+    X: np.ndarray, t: np.ndarray, w: np.ndarray, ref_row: np.ndarray
+) -> np.ndarray:
+    """Weighted least squares constrained so ``ref_row @ coeffs == 1``."""
+    j = int(np.argmax(np.abs(ref_row)))
+    reduced = X - np.outer(X[:, j], ref_row) / ref_row[j]
+    coeffs, *_ = np.linalg.lstsq(
+        reduced * w[:, None], (t - X[:, j] / ref_row[j]) * w, rcond=None
+    )
+    coeffs[j] = 0.0
+    coeffs[j] = (1.0 - ref_row @ coeffs) / ref_row[j]
+    return coeffs
 
 
 # ============================================================================
@@ -72,7 +98,11 @@ class PolynomialForm(FunctionalForm):
         return V @ coeffs  # (N, deg) @ (deg, F) -> (N, F)
 
     def fit(
-        self, x: np.ndarray, y: np.ndarray, weights: np.ndarray | None = None
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        weights: np.ndarray | None = None,
+        x_ref: float | None = None,
     ) -> np.ndarray:
         V = self._vandermode(x)
         if weights is None:
@@ -127,7 +157,11 @@ class HingeForm(FunctionalForm):
         return below
 
     def fit(
-        self, x: np.ndarray, y: np.ndarray, weights: np.ndarray | None = None
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        weights: np.ndarray | None = None,
+        x_ref: float | None = None,
     ) -> np.ndarray:
         """Fit hinge coefficients optimizing breakpoint xb per frequency."""
 
@@ -146,7 +180,18 @@ class HingeForm(FunctionalForm):
             if not np.all(np.isfinite(X)) or not np.all(np.isfinite(y_col)):
                 return np.inf, np.zeros(X.shape[1])
 
-            coeffs, res, _, _ = np.linalg.lstsq(X * w[:, None], y_col * w, rcond=None)
+            if x_ref is None:
+                coeffs, *_ = np.linalg.lstsq(X * w[:, None], y_col * w, rcond=None)
+            else:
+                ref_bias, ref_below, ref_above = self._hinge_terms(
+                    np.array([[x_ref]]), xb
+                )
+                coeffs = anchored_lstsq(
+                    X,
+                    y_col,
+                    w,
+                    np.array([ref_bias, ref_below.item(), ref_above.item()]),
+                )
             pred = X @ coeffs
             return np.sum(((pred - y_col) * w) ** 2), coeffs
 
@@ -185,11 +230,126 @@ class HingeForm(FunctionalForm):
 
         return fit  # (4, F)
 
+    def rescale(self, coeffs: np.ndarray, factor: np.ndarray) -> np.ndarray:
+        """Return coefficients whose evaluation is ``factor`` times this one's."""
+        # the breakpoint is a position in x and does not scale
+        scaled = coeffs.copy()
+        scaled[:3] *= factor
+        return scaled
+
     def coefficient_names(self) -> List[str]:
         keys = ["h1", "h2", "h_break"]
         if self.include_bias:
             keys.insert(0, "h0")
         return keys
+
+
+class ShiftedReciprocalLaurentForm(FunctionalForm):
+    """1 / (c_m1/w + c_0 + c_1*w) + c_lin*w, with w = x + shift.
+
+    Defined for x > 0. Non-negative coefficients keep the reciprocal's
+    denominator away from zero, so the form has no pole and never changes sign.
+    The shift floors the abscissa, flattening the form below it smoothly.
+    """
+
+    def __init__(self, n_breaks: int = 20, n_reweight: int = 6):
+        self.n_breaks = n_breaks
+        self.n_reweight = n_reweight
+
+    def _factors(self, w: np.ndarray, coeffs: np.ndarray) -> np.ndarray:
+        """Value of the form at abscissa w, shared by evaluate and fit."""
+        reciprocal = coeffs[0] / w + coeffs[1] + coeffs[2] * w
+        return 1.0 / np.where(np.abs(reciprocal) < 1e-300, 1e-300, reciprocal) + (
+            coeffs[3] * w
+        )
+
+    def evaluate(self, x: np.ndarray, coeffs: np.ndarray) -> np.ndarray:
+        """
+        Parameters
+        ----------
+        x : np.ndarray (N,)
+        coeffs : np.ndarray (5, F)
+            Rows: the three reciprocal coefficients, the linear one, the shift.
+
+        Returns
+        -------
+        np.ndarray (N, F)
+        """
+        w = np.ravel(x)[:, None] + coeffs[4][None, :]
+        return self._factors(np.maximum(w, 1e-30), coeffs[:4])
+
+    def fit(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        weights: np.ndarray | None = None,
+        x_ref: float | None = None,
+    ) -> np.ndarray:
+        """Fit each frequency over a grid of shifts, keeping the best."""
+        from scipy.optimize import least_squares, nnls
+
+        x = np.ravel(x)
+        n_freq = y.shape[1]
+        coeffs = np.zeros((5, n_freq))
+        breaks = np.geomspace(max(x.min(), 1e-30), x.max() * 0.1, self.n_breaks)
+        x_ref = float(x.max()) if x_ref is None else float(x_ref)
+
+        logger.info(
+            "Fitting ShiftedReciprocalLaurent model (%d shifts)...", breaks.size
+        )
+
+        for fi in range(n_freq):
+            y_col = y[:, fi]
+            usable = np.isfinite(y_col) & (y_col > 0)
+            w_col = np.ones_like(y_col) if weights is None else weights[:, fi]
+            w_col = np.sqrt(np.clip(np.where(usable, w_col, 0.0), 0.0, None))
+            if (w_col > 0).sum() < 5:
+                continue
+            y_safe = np.where(usable, y_col, 1.0)
+
+            best, best_rss = None, np.inf
+            for shift in breaks:
+                w = x + shift
+                terms = np.stack([1.0 / w, np.ones_like(w), w], axis=1)
+                # A least-squares weight in y becomes 1/Q on the reciprocal.
+                z = 1.0 / y_safe
+                q = np.ones_like(z)
+                for _ in range(self.n_reweight):
+                    row = w_col / np.maximum(np.abs(q), FIT_EPS)
+                    seed, _ = nnls(terms * row[:, None], z * row)
+                    q = terms @ seed
+
+                start = np.append(seed, 0.0)
+                result = least_squares(
+                    lambda c: w_col * (self._factors(w, c) - y_safe),
+                    start,
+                    bounds=(0.0, np.inf),
+                    max_nfev=400,
+                )
+                at_ref = float(self._factors(np.array([x_ref + shift]), result.x)[0])
+                if not at_ref > 0:
+                    continue
+                rss = float(np.sum(result.fun**2))
+                if rss < best_rss:
+                    best_rss = rss
+                    best = np.append(self.rescale(result.x, 1.0 / at_ref), shift)
+            if best is not None:
+                coeffs[:, fi] = best
+
+            if fi % max(1, n_freq // 10) == 0:
+                logger.debug("ShiftedReciprocalLaurent progress: %d/%d", fi + 1, n_freq)
+
+        return coeffs
+
+    def rescale(self, coeffs: np.ndarray, factor: np.ndarray) -> np.ndarray:
+        """Return coefficients whose evaluation is ``factor`` times this one's."""
+        scaled = coeffs.copy()
+        scaled[:3] /= factor
+        scaled[3] *= factor
+        return scaled
+
+    def coefficient_names(self) -> List[str]:
+        return ["lm1", "l0", "l1", "lin", "shift"]
 
 
 class SmoothHingeForm(HingeForm):
@@ -287,14 +447,17 @@ class RationalForm(FunctionalForm):
         max_nfev: int = 800
 
     def fit(
-        self, x: np.ndarray, y: np.ndarray, weights: np.ndarray | None = None
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        weights: np.ndarray | None = None,
+        x_ref: float | None = None,
     ) -> np.ndarray:
         """Fit rational function per frequency.
 
         The denominator is required to stay positive across the evaluation
-        range: a root inside it is a pole, and the cross-section diverges
-        there. Frequencies whose unconstrained optimum has one are refitted
-        with coefficient bounds that make a root impossible.
+        range: a root inside it is a pole, and the cross-section diverges.
+        Frequencies whose fits have poles are refitted with coefficient bounds.
 
         Returns
         -------
@@ -314,11 +477,13 @@ class RationalForm(FunctionalForm):
         margin = self.fit_config.collocation_margin * (x_max - x_min)
         x_check = np.linspace(x_min - margin, x_max + margin, 512)
 
-        Vn = self._vandermonde_num(x)
-        Vd = self._vandermonde_den(x)
-        Vd_check = self._vandermonde_den(x_check)
+        # Fit against x/x_absmax so every power of the abscissa is order one and
+        # the coefficients share a scale; they are divided back out at the end.
+        Vn = self._vandermonde_num(x / x_absmax)
+        Vd = self._vandermonde_den(x / x_absmax)
+        Vd_check = self._vandermonde_den(x_check / x_absmax)
 
-        b_scale = np.array([x_absmax**i for i in range(1, self._n_b + 1)])
+        b_scale = np.ones(self._n_b)
         floor = self.fit_config.den_floor
         # Sufficient bound: each denominator term is limited so their sum can
         # never pull 1 + sum(b_i x^i) below the floor.
@@ -328,12 +493,25 @@ class RationalForm(FunctionalForm):
             den = Vd_ @ b + 1.0
             return np.where(np.abs(den) < 1e-12, np.copysign(1e-12, den), den)
 
+        # a0 is set by the anchor rather than fitted, so the form is 1 at x_ref.
+        ref = (x_ref if x_ref is not None else 0.0) / x_absmax
+        vn_ref = self._vandermonde_num(np.array([ref]))[0]
+        vd_ref = self._vandermonde_den(np.array([ref]))[0]
+
+        def _expand(params):
+            if x_ref is None:
+                return params[: self._n_a], params[self._n_a :]
+            a_rest, b = params[: self._n_a - 1], params[self._n_a - 1 :]
+            a0 = (1.0 + vd_ref @ b - vn_ref[1:] @ a_rest) / vn_ref[0]
+            return np.concatenate([[a0], a_rest]), b
+
         def _residual(params, y_col, w):
-            a = params[: self._n_a]
-            b = params[self._n_a :]
+            a, b = _expand(params)
             fit_res = ((Vn @ a) / _den(b, Vd) - y_col) * w
             reg_res = np.sqrt(self.fit_config.regularization) * b * b_scale
             return np.concatenate([fit_res, reg_res])
+
+        n_params = self._n_params - (1 if x_ref is not None else 0)
 
         logger.info(
             "Fitting RationalForm (num=%d, den=%d) ...",
@@ -352,17 +530,20 @@ class RationalForm(FunctionalForm):
                 else np.sqrt(np.clip(weights[:, fi], 0.0, None))
             )
             used = w > 0
-            if used.sum() < self._n_params + 1:
+            if used.sum() < n_params + 1:
                 continue
 
-            x0 = np.zeros(self._n_params)
+            x0 = np.zeros(n_params)
             try:
                 slope, intercept = np.polyfit(x[used], y_col[used], 1)
             except Exception:
                 slope, intercept = 0.0, float(np.mean(y_col[used]))
-            x0[0] = intercept
-            if self._n_a > 1:
-                x0[1] = slope
+            if x_ref is None:
+                x0[0] = intercept
+                if self._n_a > 1:
+                    x0[1] = slope
+            elif self._n_a > 1:
+                x0[0] = slope
 
             result = least_squares(
                 _residual,
@@ -372,9 +553,10 @@ class RationalForm(FunctionalForm):
                 max_nfev=int(self.fit_config.max_nfev),
             )
 
-            if _den(result.x[self._n_a :], Vd_check).min() < floor:
-                lo = np.concatenate([np.full(self._n_a, -np.inf), -b_bound])
-                hi = np.concatenate([np.full(self._n_a, np.inf), b_bound])
+            if _den(_expand(result.x)[1], Vd_check).min() < floor:
+                n_free_a = n_params - self._n_b
+                lo = np.concatenate([np.full(n_free_a, -np.inf), -b_bound])
+                hi = np.concatenate([np.full(n_free_a, np.inf), b_bound])
                 result = least_squares(
                     _residual,
                     np.clip(x0, lo, hi),
@@ -384,12 +566,21 @@ class RationalForm(FunctionalForm):
                 )
                 n_bounded += 1
 
-            coeffs[:, fi] = result.x
+            unscale = x_absmax ** np.concatenate(
+                [np.arange(self._n_a), np.arange(1, self._n_b + 1)]
+            )
+            coeffs[:, fi] = np.concatenate(_expand(result.x)) / unscale
 
         if n_bounded:
             logger.info("  %d/%d frequencies refitted pole-free", n_bounded, n_freq)
 
         return coeffs  # (n_params, F)
+
+    def rescale(self, coeffs: np.ndarray, factor: np.ndarray) -> np.ndarray:
+        """Return coefficients whose evaluation is ``factor`` times this one's."""
+        scaled = coeffs.copy()
+        scaled[: self._n_a] *= factor
+        return scaled
 
     def coefficient_names(self) -> List[str]:
         return [f"rn{i}" for i in range(self._n_a)] + [
@@ -406,7 +597,11 @@ class PowerLawForm(FunctionalForm):
         return c0 * (x_safe**c1) + c2
 
     def fit(
-        self, x: np.ndarray, y: np.ndarray, weights: np.ndarray | None = None
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        weights: np.ndarray | None = None,
+        x_ref: float | None = None,
     ) -> np.ndarray:
         from scipy.optimize import least_squares
 
@@ -458,7 +653,11 @@ class NullForm(FunctionalForm):
         return np.zeros((np.atleast_1d(x).shape[0], coeffs.shape[1]))
 
     def fit(
-        self, x: np.ndarray, y: np.ndarray, weights: np.ndarray | None = None
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        weights: np.ndarray | None = None,
+        x_ref: float | None = None,
     ) -> np.ndarray:
         f_size = y.shape[1] if y.ndim > 1 else 1
         return np.zeros((1, f_size))
@@ -474,6 +673,7 @@ class NullForm(FunctionalForm):
 functional_form_registry: dict[str, FunctionalForm] = {
     "Polynomial": PolynomialForm(),
     "Hinge": HingeForm(),
+    "ShiftedReciprocalLaurent": ShiftedReciprocalLaurentForm(),
     "SmoothHinge": SmoothHingeForm(),
     "Rational": RationalForm(),
     "Powerlaw": PowerLawForm(),

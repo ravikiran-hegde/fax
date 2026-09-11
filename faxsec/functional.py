@@ -21,6 +21,10 @@ from faxsec.forms import FunctionalForm, functional_form_registry
 
 logger = logging.getLogger(__name__)
 
+# Smallest value either factor of the product model may take while fitting, so
+# the alternating fit never divides by a factor that has run through zero.
+FACTOR_FLOOR = 1e-12
+
 
 def lnp(p, ref_pressure, **_ignored):
     return np.log(p / ref_pressure)
@@ -31,6 +35,14 @@ def lnp_withself(p, ref_pressure, vmr, ref_vmr, self_scaling):
         (p / ref_pressure)
         * (1.0 + vmr * self_scaling)  # / (1.0 + ref_vmr * self_scaling)
     )
+
+
+def p_ratio(p, ref_pressure, **_ignored):
+    return p / ref_pressure
+
+
+def p_ratio_withself(p, ref_pressure, vmr, ref_vmr, self_scaling):
+    return (p / ref_pressure) * (1.0 + vmr * self_scaling)
 
 
 def dT(T, ref_temperature):
@@ -63,6 +75,11 @@ class FunctionalCoeffs:
 
 
 class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
+    """xsec = xsec0 * exp(P(ln p/p0) + T(dT)), fitted additively in log space."""
+
+    # (without self-broadening, with it) -- the subclass swaps the pair.
+    pressure_variables = (lnp, lnp_withself)
+
     pressure_form: FunctionalForm
     temperature_form: FunctionalForm
     config: "FunctionalConfig"
@@ -97,6 +114,8 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
         self.temperature_form = temperature_form
         self.config = FunctionalConfig(
             species=species,
+            pressure_form_name=pressure_form_name,
+            temperature_form_name=temperature_form_name,
             ref_pressure=ref_pressure,
             ref_temperature=ref_temperature,
             ref_vmr=ref_vmr,
@@ -107,9 +126,8 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
         )
         self.coeffs = FunctionalCoeffs()
 
-        self.pressure_var = (
-            staticmethod(lnp_withself) if self_scaling != 0 else staticmethod(lnp)
-        )
+        plain, with_self = type(self).pressure_variables
+        self.pressure_var = staticmethod(with_self if self_scaling != 0 else plain)
         self.temperature_var = staticmethod(
             T_ratio if temperature_variable == "T_ratio" else dT
         )
@@ -207,15 +225,67 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
             reference_ds["temperature"].values, self.config.ref_temperature
         )
 
+        # Copied because irrelevant frequencies are zeroed in it below, and
+        # .values on a selection can be a view into the reference.
         self.coeffs.xsec0 = (
             reference_ds["xsec"]
             .sel(
                 pressure=self.config.ref_pressure,
                 temperature=self.config.ref_temperature,
             )
-            .values
+            .values.copy()
         )
 
+        rss = self._fit_coefficients(reference_ds, x_p, x_t, max_iter)
+
+        # A frequency whose cross-section stays under the relevance floor at
+        # every training case cannot carry optical depth anywhere in a column,
+        # so the fit there is unconstrained noise. Zeroing xsec0 makes the model
+        # return exactly zero, and zeroing the temperature coefficients makes
+        # the factored product zero too, for readers that never see xsec0. The
+        # pressure coefficients stay as fitted: they are what keeps a reciprocal
+        # form's denominator away from zero.
+        dead = reference_ds["xsec"].values.max(axis=0) < self.config.xsec_floor
+        if dead.any():
+            self.coeffs.xsec0[dead] = 0.0
+            self.coeffs.temperature_coeffs[:, dead] = 0.0
+            logger.info(
+                "%s: %d/%d frequencies below the relevance floor, set to zero",
+                self.config.species,
+                int(dead.sum()),
+                dead.size,
+            )
+
+        # Self-broadening raises the effective pressure above anything in the
+        # reference, which is built at ref_vmr, so the valid range must allow
+        # for it or the correction would be clipped away at the surface.
+        from .utils import COLUMN_VMR
+
+        excess = COLUMN_VMR.get(self.config.species, 0.0) * self.config.self_scaling
+        self.coeffs.x_p_range = np.array(
+            [x_p.min(), self._broadened_x_p_max(x_p.max(), excess)]
+        )
+        self.coeffs.x_t_range = np.array([x_t.min(), x_t.max()])
+
+        return rss
+
+    def _broadened_x_p_max(self, x_p_max: float, excess: float) -> float:
+        """Upper abscissa bound once self-broadening has raised the pressure."""
+        return x_p_max + np.log1p(excess)
+
+    def _log_training_start(self, reference_ds, max_iter) -> None:
+        logger.info(
+            "Training %s (%s x %s, self_scaling=%s): %d reference cases, max_iter=%d",
+            self.config.species,
+            self.config.pressure_form_name,
+            self.config.temperature_form_name,
+            self.config.self_scaling,
+            reference_ds.sizes.get("case", 0),
+            max_iter,
+        )
+
+    def _fit_coefficients(self, reference_ds, x_p, x_t, max_iter) -> float:
+        """Alternating least squares on ln(xsec/xsec0), where the model is additive."""
         target = reference_ds["xsec"].values / self.coeffs.xsec0
         np.log(target, out=target)
 
@@ -232,23 +302,11 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
                 weights.size,
             )
 
-        # training using alternating least squares
-
         residual = np.empty_like(target)  # scratch buffer, reused every iteration
         p_pred = t_pred = 0.0
-        p_coeffs = t_coeffs = None
-
         prev_rss = np.inf
 
-        logger.info(
-            "Training %s (%s x %s, self_scaling=%s): %d reference cases, max_iter=%d",
-            self.config.species,
-            self.config.pressure_form_name,
-            self.config.temperature_form_name,
-            self.config.self_scaling,
-            reference_ds.sizes.get("case", 0),
-            max_iter,
-        )
+        self._log_training_start(reference_ds, max_iter)
 
         for iteration in range(max_iter):
 
@@ -278,17 +336,6 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
             prev_rss = rss
         else:
             logger.info("Reached max_iter=%d (rss=%.6g)", max_iter, rss.sum())
-
-        # Self-broadening raises the effective pressure above anything in the
-        # reference, which is built at ref_vmr, so the valid range must allow
-        # for it or the correction would be clipped away at the surface.
-        from .utils import COLUMN_VMR
-
-        self_broadening = np.log1p(
-            COLUMN_VMR.get(self.config.species, 0.0) * self.config.self_scaling
-        )
-        self.coeffs.x_p_range = np.array([x_p.min(), x_p.max() + self_broadening])
-        self.coeffs.x_t_range = np.array([x_t.min(), x_t.max()])
 
         return float(rss.sum())
 
@@ -342,6 +389,7 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
             futures = [
                 pool.submit(
                     _train_frequency_chunk,
+                    type(self),
                     {**config, "frequency_grid": grid[chunk]},
                     str(reference_xsec),
                     chunk,
@@ -360,7 +408,7 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
                     tmp_path.replace(save_path)
 
         trained = xr.concat(parts, **concat).sortby("frequency")
-        self.coeffs = FunctionalAbsorber.from_dataset(trained.isel(species=0)).coeffs
+        self.coeffs = type(self).from_dataset(trained.isel(species=0)).coeffs
 
     def to_dataset(self) -> xr.Dataset:
 
@@ -520,13 +568,216 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
 
 
 def _train_frequency_chunk(
-    config: dict, reference_xsec: str, chunk: slice, train_kwargs: dict
+    absorber_class: type,
+    config: dict,
+    reference_xsec: str,
+    chunk: slice,
+    train_kwargs: dict,
 ) -> xr.Dataset:
     """Fit one slice of the frequency grid, in a worker process."""
 
-    absorber = FunctionalAbsorber(**config)
+    absorber = absorber_class(**config)
     with xr.open_dataset(reference_xsec) as reference:
         absorber.train(
             reference_xsec=reference.isel(frequency=chunk).load(), **train_kwargs
         )
     return absorber.to_dataset()
+
+
+class NoLogFunctionalAbsorber(FunctionalAbsorber):
+    """xsec = xsec0 * P(p/p0) * T(dT), so a spectral point costs no transcendental.
+
+    Same forms and the same stored layout as the log model; only the abscissa,
+    the way the two factors combine, and the fit that follows from it differ.
+    """
+
+    pressure_variables = (p_ratio, p_ratio_withself)
+
+    @property
+    def class_name(self) -> str:
+        return f"NoLog_{super().class_name}"
+
+    def cross_section_from_x_vars(
+        self,
+        x_p: np.ndarray,
+        x_t: np.ndarray,
+    ) -> np.ndarray:
+        """Return cross-section matrix with shape (levels, frequency) from pre-computed x_p and x_t."""
+        if self.coeffs.x_p_range is not None:
+            x_p = np.clip(x_p, *self.coeffs.x_p_range)
+        if self.coeffs.x_t_range is not None:
+            x_t = np.clip(x_t, *self.coeffs.x_t_range)
+
+        # Both factors scale the cross-section, so a negative one is meaningless;
+        # clipping them separately stops two negatives making a positive.
+        p_scale = np.clip(
+            self.pressure_form.evaluate(x_p, self.coeffs.pressure_coeffs), 0, None
+        )
+        t_scale = np.clip(
+            self.temperature_form.evaluate(x_t, self.coeffs.temperature_coeffs), 0, None
+        )
+
+        xsec = self.coeffs.xsec0 * p_scale * t_scale
+        return np.clip(np.nan_to_num(xsec, nan=0, posinf=0, neginf=0), 0, 1e10)
+
+    def _broadened_x_p_max(self, x_p_max: float, excess: float) -> float:
+        """Upper abscissa bound once self-broadening has raised the pressure."""
+        return x_p_max * (1.0 + excess)
+
+    def _fit_coefficients(self, reference_ds, x_p, x_t, max_iter) -> float:
+        """Alternating least squares on xsec/xsec0, where the model is a product."""
+        target = reference_ds["xsec"].values / self.coeffs.xsec0
+        # target is 1 at the reference case, so holding both factors to 1 there
+        # makes the model return the stored xsec0 exactly.
+        i_ref = int(
+            np.flatnonzero(
+                (reference_ds["pressure"].values == self.config.ref_pressure)
+                & (reference_ds["temperature"].values == self.config.ref_temperature)
+            )[0]
+        )
+
+        # Underflowed reference values are a constant placeholder, not data.
+        # The kept ones carry weight 1/y^2, which makes the fit minimise
+        # relative rather than absolute error in the cross-section.
+        keep = target > self.config.xsec_floor / self.coeffs.xsec0
+        weights = np.zeros_like(target)
+        np.divide(1.0, target, out=weights, where=keep)
+        weights *= weights
+        n_masked = int((weights == 0).sum())
+        if n_masked:
+            logger.info(
+                "%s: masked %d/%d underflowed reference values",
+                self.config.species,
+                n_masked,
+                weights.size,
+            )
+
+        # Holding one factor of the product fixed leaves a weighted least-squares
+        # problem for the other: w (y - P T)^2 = w P^2 (y/P - T)^2.
+        ratio = np.empty_like(target)  # scratch buffer, reused every iteration
+        scaled_weights = np.empty_like(target)
+        p_pred = np.ones_like(target)
+        prev_rss = np.inf
+
+        self._log_training_start(reference_ds, max_iter)
+
+        for iteration in range(max_iter):
+
+            # Fit T given P (xsec / xsec0 / P_effect ~ T_effect)
+            np.divide(target, p_pred, out=ratio)
+            np.square(p_pred, out=scaled_weights)
+            scaled_weights *= weights
+            t_coeffs = self.temperature_form.fit(
+                x_t, ratio, scaled_weights, x_ref=x_t[i_ref]
+            )
+            t_pred = np.clip(
+                self.temperature_form.evaluate(x_t, t_coeffs), FACTOR_FLOOR, None
+            )
+
+            # Fit P given T (xsec / xsec0 / T_effect ~ P_effect)
+            np.divide(target, t_pred, out=ratio)
+            np.square(t_pred, out=scaled_weights)
+            scaled_weights *= weights
+            p_coeffs = self.pressure_form.fit(
+                x_p, ratio, scaled_weights, x_ref=x_p[i_ref]
+            )
+            p_pred = np.clip(
+                self.pressure_form.evaluate(x_p, p_coeffs), FACTOR_FLOOR, None
+            )
+
+            np.multiply(p_pred, t_pred, out=ratio)
+            ratio -= target  # ratio is now the model error on xsec / xsec0
+            rss = np.einsum("ij,ij,ij->j", weights, ratio, ratio)
+
+            self.coeffs.pressure_coeffs = p_coeffs
+            self.coeffs.temperature_coeffs = t_coeffs
+
+            logger.debug("  iter %d/%d: rss=%.6g", iteration + 1, max_iter, rss.sum())
+
+            if iteration > 0 and np.all(prev_rss - rss < 1e-10 * prev_rss):
+                logger.info(
+                    "Converged after %d iterations (rss=%.6g)", iteration + 1, rss.sum()
+                )
+                break
+            prev_rss = rss
+        else:
+            logger.info("Reached max_iter=%d (rss=%.6g)", max_iter, rss.sum())
+
+        self._refine_jointly(target, weights, x_p, x_t, i_ref)
+        return float(rss.sum())
+
+    def _refine_jointly(self, target, weights, x_p, x_t, i_ref) -> None:
+        """Fit both factors together per frequency, starting from the ALS result.
+
+        Alternating leaves each factor absorbing the other's error; refining
+        them together removes that, and normalising each to 1 at the reference
+        keeps the model equal to xsec0 there. A refinement that drives either
+        factor through zero anywhere in range is discarded: the product model
+        has no way to represent a sign change, so it would evaluate to zero.
+        """
+        from scipy.optimize import least_squares
+
+        n_p = self.coeffs.pressure_coeffs.shape[0]
+        p_grid = np.geomspace(max(x_p.min(), 1e-30), x_p.max(), 512)
+        t_grid = np.linspace(x_t.min(), x_t.max(), 512)
+        logger.info("Refining %s jointly ...", self.config.species)
+        n_kept = 0
+
+        for fi in range(target.shape[1]):
+            used = weights[:, fi] > 0
+            if used.sum() < n_p + 6:
+                continue
+            y = np.where(used, target[:, fi], 1.0)
+            w = used.astype(float)
+            start = np.concatenate(
+                [
+                    self.coeffs.pressure_coeffs[:, fi],
+                    self.coeffs.temperature_coeffs[:, fi],
+                ]
+            )
+
+            def factors(par):
+                return (
+                    self.pressure_form.evaluate(x_p, par[:n_p, None])[:, 0],
+                    self.temperature_form.evaluate(x_t, par[n_p:, None])[:, 0],
+                )
+
+            def residual(par):
+                p_fac, t_fac = factors(par)
+                anchor = p_fac[i_ref] * t_fac[i_ref]
+                return (p_fac * t_fac / anchor / y - 1.0) * w
+
+            # Refinement polishes the alternating fit, it does not restructure
+            # it: holding each coefficient's sign keeps whatever the form's own
+            # fit established, non-negativity of a pole-free factor included.
+            lower = np.where(start >= 0, 0.0, -np.inf)
+            upper = np.where(start >= 0, np.inf, 0.0)
+            result = least_squares(
+                residual,
+                np.clip(start, lower, upper),
+                bounds=(lower, upper),
+                loss="soft_l1",
+                max_nfev=600,
+            )
+            p_fac, t_fac = factors(result.x)
+            if not (
+                np.isfinite(p_fac[i_ref]) and p_fac[i_ref] > 0 and t_fac[i_ref] > 0
+            ):
+                continue
+            p_range = self.pressure_form.evaluate(p_grid, result.x[:n_p, None])
+            t_range = self.temperature_form.evaluate(t_grid, result.x[n_p:, None])
+            if p_range.min() <= 0 or t_range.min() <= 0:
+                continue
+            n_kept += 1
+            self.coeffs.pressure_coeffs[:, fi] = self.pressure_form.rescale(
+                result.x[:n_p], 1.0 / p_fac[i_ref]
+            )
+            self.coeffs.temperature_coeffs[:, fi] = self.temperature_form.rescale(
+                result.x[n_p:], 1.0 / t_fac[i_ref]
+            )
+        logger.info(
+            "%s: joint refinement kept for %d/%d frequencies",
+            self.config.species,
+            n_kept,
+            target.shape[1],
+        )

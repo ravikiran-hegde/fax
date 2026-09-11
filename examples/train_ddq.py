@@ -13,7 +13,7 @@ from faxsec.constants import (
     REFERENCE_VMR,
     SELF_SCALING,
 )
-from faxsec.functional import FunctionalAbsorber
+from faxsec.functional import FunctionalAbsorber, NoLogFunctionalAbsorber
 from faxsec.log_config import setup_logging
 from faxsec.utils import (
     ensure_reference_dataset,
@@ -30,18 +30,25 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 
 # Named training configurations. Each gives the reference point the fit is
-# anchored at and how the (p, T) training sample is drawn; bands may differ.
+# anchored at, the forms fitted, and how the (p, T) training sample is drawn;
+# bands may override any of it.
 TRAINING_CONFIGS = {
     "legacy": {
         "ref_pressure": REF_PRESSURE,
         "ref_temperature": REF_TEMPERATURE,
         "temperature_variable": "dT",
+        "formulation": "log",
+        "pressure_form": "Hinge",
+        "temperature_form": "Rational",
         "sampling": {"method": "natural", "p_range": [0.01, 110000], "N_samples": 1000},
     },
     "atmospheric": {
         "ref_pressure": 1.0e4,
         "ref_temperature": 240.0,
         "temperature_variable": "dT",
+        "formulation": "log",
+        "pressure_form": "Hinge",
+        "temperature_form": "Rational",
         "sampling": {
             "method": "atmospheric",
             "p_range": [1.0, 1.1e5],
@@ -59,13 +66,22 @@ TRAINING_CONFIGS = {
     },
 }
 
+# Same reference point and sample, evaluated without a transcendental per
+# spectral point: xsec0 * P(p/p0) * T(dT) instead of xsec0 * exp(P + T).
+TRAINING_CONFIGS["atmospheric_nolog"] = {
+    **TRAINING_CONFIGS["atmospheric"],
+    "formulation": "nolog",
+    "pressure_form": "ShiftedReciprocalLaurent",
+}
+
+FORMULATIONS = {"log": FunctionalAbsorber, "nolog": NoLogFunctionalAbsorber}
+
 
 def band_config(config: dict, band: str) -> dict:
     """Configuration for one band, with any band overrides merged in."""
     resolved = {k: v for k, v in config.items() if k != "bands"}
     resolved["sampling"] = dict(resolved["sampling"])
-    override = config.get("bands", {}).get(band, {})
-    for key, value in override.items():
+    for key, value in config.get("bands", {}).get(band, {}).items():
         if key == "sampling":
             resolved["sampling"].update(value)
         else:
@@ -106,6 +122,9 @@ def train_fax(
     ref_pressure: float = REF_PRESSURE,
     ref_temperature: float = REF_TEMPERATURE,
     temperature_variable: str = "dT",
+    pressure_form: str = "Hinge",
+    temperature_form: str = "Rational",
+    formulation: str = "log",
 ) -> FunctionalAbsorber:
     """Train a FAX model for a given species and frequency grid.
 
@@ -136,10 +155,10 @@ def train_fax(
         sampling_kwargs=sampling_kwargs,
     )
 
-    func_abs = FunctionalAbsorber(
+    func_abs = FORMULATIONS[formulation](
         species=species,
-        pressure_form_name="Hinge",
-        temperature_form_name="Rational",
+        pressure_form_name=pressure_form,
+        temperature_form_name=temperature_form,
         frequency_grid=frequency_grid,
         self_scaling=SELF_SCALING.get(species, 0.0),
         xsec_floor=xsec_relevance_floor(species),
@@ -258,7 +277,6 @@ for ddq_case in ddq_files:
 
     absorbers = {}
     config = band_config(base_config, band)
-    sampling_kwargs = config["sampling"]
     reference_cache_dir = DATA_DIR / "reference" / f"{case_name}{reference_suffix}"
 
     # lines
@@ -268,10 +286,13 @@ for ddq_case in ddq_files:
             arts_tag=lines[band][sp],
             frequency_grid=frequency_grid,
             reference_cache_dir=reference_cache_dir,
-            sampling_kwargs=sampling_kwargs,
+            sampling_kwargs=config["sampling"],
             ref_pressure=config["ref_pressure"],
             ref_temperature=config["ref_temperature"],
             temperature_variable=config["temperature_variable"],
+            pressure_form=config["pressure_form"],
+            temperature_form=config["temperature_form"],
+            formulation=config["formulation"],
         )
         absorbers[sp] = func_abs
 
