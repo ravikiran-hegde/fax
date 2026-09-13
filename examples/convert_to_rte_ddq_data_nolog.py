@@ -2,10 +2,10 @@
 """Flatten a no-log trained GasOptics datatree for the Fortran DDQ RTE solver.
 
 The companion of convert_to_rte_ddq_data.py for
-xsec = sigma0 * (1/(c0/w + c1 + c2*w) + c3*x) * N(dT)/D(dT), with x = p/p0 and
-w = x + c4,
-which needs no transcendental at a spectral point. Only fax_c changes shape
-against the log layout; everything else in the file is identical.
+xsec = sigma0 * P(x) * N(dT)/D(dT), with
+x = (p/p0)*(1 + vmr*S)/(1 + vmr0*S),
+P(x) = lin*x + (1 - lin)/Q(w), w = (x + shift)/(1 + shift) and
+Q(w) = c0*c1/w + c0*(1 - c1) + (1 - c0)*w.
 """
 
 import argparse
@@ -33,7 +33,6 @@ FAX_GROUP = "NoLog_ShiftedReciprocalLaurent_Rational"
 DROP_VARS = [
     "temperature_coeffs",
     "t_order",
-    "fax_vmr0",
     "x_p_range",
     "x_t_range",
     "bound",
@@ -79,6 +78,7 @@ LW_ORDER = [
     "fax_p0",
     "fax_T0",
     "fax_S",
+    "fax_vmr0",
     "fax_sigma0",
     "fax_p_nterms",
     "fax_c",
@@ -107,9 +107,10 @@ SW_ORDER = [
 ]
 
 PRESSURE_TERMS = (
-    "Order: c0, c1, c2, c_lin, shift. With x = p/p0 and w = x + shift the "
-    "pressure factor is 1/(c0/w + c1 + c2*w) + c_lin*x. The shift applies only "
-    "inside the reciprocal: the far wing is Lorentzian and scales with x."
+    "Order: c0, c1, shift, lin. With x = (p/fax_p0)*(1 + vmr*fax_S)/"
+    "(1 + fax_vmr0*fax_S) and w = (x + shift)/(1 + shift) the pressure factor "
+    "is lin*x + (1 - lin)/Q(w), where "
+    "Q(w) = c0*c1/w + c0*(1 - c1) + (1 - c0)*w is 1 at x = 1."
 )
 
 VARIABLE_ATTRS = {
@@ -127,9 +128,13 @@ VARIABLE_ATTRS = {
     "fax_p0": {"units": "Pa", "description": "Reference pressure for fax_sigma0."},
     "fax_T0": {"units": "K", "description": "Reference temperature for fax_sigma0."},
     "fax_S": {"units": "1", "description": "Self-broadening pressure scaling factor."},
+    "fax_vmr0": {
+        "units": "1",
+        "description": "Reference volume mixing ratio for fax_sigma0.",
+    },
     "fax_sigma0": {
         "units": "m^2 molecule^-1",
-        "description": "Reference cross section at fax_p0 and fax_T0, and vmr = 1e-9.",
+        "description": "Reference cross section at fax_p0, fax_T0 and fax_vmr0.",
     },
     "fax_p_nterms": {"units": "1", "description": PRESSURE_TERMS},
     "fax_c": {"units": "", "description": PRESSURE_TERMS},
@@ -233,10 +238,12 @@ def verify_against_model(flat, datatree, band):
         a = flat["fax_a"].isel(fax_nspecies=i).values.T
         b = flat["fax_b"].isel(fax_nspecies=i).values.T
 
+        self_scaling = float(flat["fax_S"].isel(fax_nspecies=i))
         x_p = (
             p
-            * (1.0 + vmr * float(flat["fax_S"].isel(fax_nspecies=i)))
             / float(flat["fax_p0"].isel(fax_nspecies=i))
+            * (1.0 + vmr * self_scaling)
+            / (1.0 + float(flat["fax_vmr0"].isel(fax_nspecies=i)) * self_scaling)
         )
         x_t = t - float(flat["fax_T0"].isel(fax_nspecies=i))
         if model.coeffs.x_p_range is not None:
@@ -244,12 +251,14 @@ def verify_against_model(flat, datatree, band):
             x_t = np.clip(x_t, *model.coeffs.x_t_range)
         x_p, x_t = x_p[:, None], x_t[:, None]
 
-        w = x_p + c[4]
+        w = (x_p + c[2]) / (1.0 + c[2])
         powers_t = np.stack([x_t**k for k in range(3)], axis=0)  # (term, point, 1)
         # Frequencies with no usable reference keep zero coefficients; the mask
         # below drops them, so let the division there go to infinity.
         with np.errstate(divide="ignore", invalid="ignore"):
-            pressure = 1.0 / (c[0] / w + c[1] + c[2] * w) + c[3] * x_p
+            pressure = c[3] * x_p + (1.0 - c[3]) / (
+                c[0] * c[1] / w + c[0] * (1.0 - c[1]) + (1.0 - c[0]) * w
+            )
             rational = (powers_t * a[:, None, :]).sum(0) / (
                 powers_t * b[:, None, :]
             ).sum(0)

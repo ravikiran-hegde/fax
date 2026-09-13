@@ -42,7 +42,10 @@ def p_ratio(p, ref_pressure, **_ignored):
 
 
 def p_ratio_withself(p, ref_pressure, vmr, ref_vmr, self_scaling):
-    return (p / ref_pressure) * (1.0 + vmr * self_scaling)
+    """Broadening-equivalent pressure, 1 at the reference state."""
+    return (
+        (p / ref_pressure) * (1.0 + vmr * self_scaling) / (1.0 + ref_vmr * self_scaling)
+    )
 
 
 def dT(T, ref_temperature):
@@ -709,11 +712,8 @@ class NoLogFunctionalAbsorber(FunctionalAbsorber):
     def _refine_jointly(self, target, weights, x_p, x_t, i_ref) -> None:
         """Fit both factors together per frequency, starting from the ALS result.
 
-        Alternating leaves each factor absorbing the other's error; refining
-        them together removes that, and normalising each to 1 at the reference
-        keeps the model equal to xsec0 there. A refinement that drives either
-        factor through zero anywhere in range is discarded: the product model
-        has no way to represent a sign change, so it would evaluate to zero.
+        A refinement that drives either factor through zero anywhere in range
+        is discarded.
         """
         from scipy.optimize import least_squares
 
@@ -747,11 +747,9 @@ class NoLogFunctionalAbsorber(FunctionalAbsorber):
                 anchor = p_fac[i_ref] * t_fac[i_ref]
                 return (p_fac * t_fac / anchor / y - 1.0) * w
 
-            # Refinement polishes the alternating fit, it does not restructure
-            # it: holding each coefficient's sign keeps whatever the form's own
-            # fit established, non-negativity of a pole-free factor included.
-            lower = np.where(start >= 0, 0.0, -np.inf)
-            upper = np.where(start >= 0, np.inf, 0.0)
+            p_bounds = self.pressure_form.bounds(start[:n_p])
+            t_bounds = self.temperature_form.bounds(start[n_p:])
+            lower, upper = (np.concatenate(b) for b in zip(p_bounds, t_bounds))
             result = least_squares(
                 residual,
                 np.clip(start, lower, upper),
@@ -769,9 +767,7 @@ class NoLogFunctionalAbsorber(FunctionalAbsorber):
             if p_range.min() <= 0 or t_range.min() <= 0:
                 continue
             n_kept += 1
-            self.coeffs.pressure_coeffs[:, fi] = self.pressure_form.rescale(
-                result.x[:n_p], 1.0 / p_fac[i_ref]
-            )
+            self.coeffs.pressure_coeffs[:, fi] = result.x[:n_p]
             self.coeffs.temperature_coeffs[:, fi] = self.temperature_form.rescale(
                 result.x[n_p:], 1.0 / t_fac[i_ref]
             )
