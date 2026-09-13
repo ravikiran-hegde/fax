@@ -245,22 +245,23 @@ class HingeForm(FunctionalForm):
 
 
 class ShiftedReciprocalLaurentForm(FunctionalForm):
-    """1 / (c_m1/w + c_0 + c_1*w) + c_lin*w, with w = x + shift.
+    """1 / (c_m1/w + c_0 + c_1*w) + c_lin*x, with w = x + shift.
 
     Defined for x > 0. Non-negative coefficients keep the reciprocal's
     denominator away from zero, so the form has no pole and never changes sign.
-    The shift floors the abscissa, flattening the form below it smoothly.
+    The shift floors the abscissa inside the reciprocal.
     """
 
-    def __init__(self, n_breaks: int = 20, n_reweight: int = 6):
+    def __init__(self, n_breaks: int = 20, n_reweight: int = 6, n_refine: int = 3):
         self.n_breaks = n_breaks
         self.n_reweight = n_reweight
+        self.n_refine = n_refine
 
-    def _factors(self, w: np.ndarray, coeffs: np.ndarray) -> np.ndarray:
-        """Value of the form at abscissa w, shared by evaluate and fit."""
+    def _factors(self, x: np.ndarray, w: np.ndarray, coeffs: np.ndarray) -> np.ndarray:
+        """Value of the form, shared by evaluate and fit."""
         reciprocal = coeffs[0] / w + coeffs[1] + coeffs[2] * w
         return 1.0 / np.where(np.abs(reciprocal) < 1e-300, 1e-300, reciprocal) + (
-            coeffs[3] * w
+            coeffs[3] * x
         )
 
     def evaluate(self, x: np.ndarray, coeffs: np.ndarray) -> np.ndarray:
@@ -275,8 +276,9 @@ class ShiftedReciprocalLaurentForm(FunctionalForm):
         -------
         np.ndarray (N, F)
         """
-        w = np.ravel(x)[:, None] + coeffs[4][None, :]
-        return self._factors(np.maximum(w, 1e-30), coeffs[:4])
+        x_col = np.ravel(x)[:, None]
+        w = np.maximum(x_col + coeffs[4][None, :], 1e-30)
+        return self._factors(x_col, w, coeffs[:4])
 
     def fit(
         self,
@@ -291,6 +293,7 @@ class ShiftedReciprocalLaurentForm(FunctionalForm):
         x = np.ravel(x)
         n_freq = y.shape[1]
         coeffs = np.zeros((5, n_freq))
+        coeffs[1] = 1.0  # default, to avoid division by zero
         breaks = np.geomspace(max(x.min(), 1e-30), x.max() * 0.1, self.n_breaks)
         x_ref = float(x.max()) if x_ref is None else float(x_ref)
 
@@ -307,7 +310,7 @@ class ShiftedReciprocalLaurentForm(FunctionalForm):
                 continue
             y_safe = np.where(usable, y_col, 1.0)
 
-            best, best_rss = None, np.inf
+            seeds = []
             for shift in breaks:
                 w = x + shift
                 terms = np.stack([1.0 / w, np.ones_like(w), w], axis=1)
@@ -318,15 +321,27 @@ class ShiftedReciprocalLaurentForm(FunctionalForm):
                     row = w_col / np.maximum(np.abs(q), FIT_EPS)
                     seed, _ = nnls(terms * row[:, None], z * row)
                     q = terms @ seed
+                seeded = np.append(seed, 0.0)
+                rss = float(
+                    np.sum((w_col * (self._factors(x, w, seeded) - y_safe)) ** 2)
+                )
+                seeds.append((rss, shift, seeded))
 
-                start = np.append(seed, 0.0)
+            best, best_rss = None, np.inf
+            seeds.sort(key=lambda t: t[0])
+            for _, shift, start in seeds[: self.n_refine]:
+                w = x + shift
                 result = least_squares(
-                    lambda c: w_col * (self._factors(w, c) - y_safe),
+                    lambda c: w_col * (self._factors(x, w, c) - y_safe),
                     start,
                     bounds=(0.0, np.inf),
                     max_nfev=400,
                 )
-                at_ref = float(self._factors(np.array([x_ref + shift]), result.x)[0])
+                at_ref = float(
+                    self._factors(
+                        np.array([x_ref]), np.array([x_ref + shift]), result.x
+                    )[0]
+                )
                 if not at_ref > 0:
                     continue
                 rss = float(np.sum(result.fun**2))

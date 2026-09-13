@@ -2,7 +2,8 @@
 """Flatten a no-log trained GasOptics datatree for the Fortran DDQ RTE solver.
 
 The companion of convert_to_rte_ddq_data.py for
-xsec = sigma0 * (1/(c0/w + c1 + c2*w) + c3*w) * N(dT)/D(dT), with w = p/p0 + c4,
+xsec = sigma0 * (1/(c0/w + c1 + c2*w) + c3*x) * N(dT)/D(dT), with x = p/p0 and
+w = x + c4,
 which needs no transcendental at a spectral point. Only fax_c changes shape
 against the log layout; everything else in the file is identical.
 """
@@ -106,8 +107,9 @@ SW_ORDER = [
 ]
 
 PRESSURE_TERMS = (
-    "Order: c0, c1, c2, c_lin, shift. With w = p/p0 + shift the pressure factor "
-    "is 1/(c0/w + c1 + c2*w) + c_lin*w."
+    "Order: c0, c1, c2, c_lin, shift. With x = p/p0 and w = x + shift the "
+    "pressure factor is 1/(c0/w + c1 + c2*w) + c_lin*x. The shift applies only "
+    "inside the reciprocal: the far wing is Lorentzian and scales with x."
 )
 
 VARIABLE_ATTRS = {
@@ -247,7 +249,7 @@ def verify_against_model(flat, datatree, band):
         # Frequencies with no usable reference keep zero coefficients; the mask
         # below drops them, so let the division there go to infinity.
         with np.errstate(divide="ignore", invalid="ignore"):
-            pressure = 1.0 / (c[0] / w + c[1] + c[2] * w) + c[3] * w
+            pressure = 1.0 / (c[0] / w + c[1] + c[2] * w) + c[3] * x_p
             rational = (powers_t * a[:, None, :]).sum(0) / (
                 powers_t * b[:, None, :]
             ).sum(0)
@@ -259,10 +261,14 @@ def verify_against_model(flat, datatree, band):
 
         reference = model.cross_section(p, t, vmr)
         finite = (reference > 1e-40) & np.isfinite(rebuilt)
-        worst = max(worst, float(np.abs(rebuilt[finite] / reference[finite] - 1.0).max()))
+        worst = max(
+            worst, float(np.abs(rebuilt[finite] / reference[finite] - 1.0).max())
+        )
 
     if worst > 1e-8:
-        raise AssertionError(f"{band}: flat file disagrees with the model by {worst:.2e}")
+        raise AssertionError(
+            f"{band}: flat file disagrees with the model by {worst:.2e}"
+        )
     print(f"{band}: flat file reproduces the model (max relative error = {worst:.1e})")
 
 
@@ -345,7 +351,7 @@ def flatten(band):
 
 
 for band in ("LW", "SW"):
-    flatten(band).to_netcdf(args.out_dir / f"gas_optics_{band.lower()}_nolog.nc")
-    print(f"wrote {args.out_dir / f'gas_optics_{band.lower()}_nolog.nc'}")
+    flatten(band).to_netcdf(args.out_dir / f"gas_optics_{band.lower()}.nc")
+    print(f"wrote {args.out_dir / f'gas_optics_{band.lower()}.nc'}")
 
 # %%
