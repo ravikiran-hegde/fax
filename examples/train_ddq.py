@@ -64,14 +64,24 @@ TRAINING_CONFIGS = {
             "SW": {"sampling": {"pressure_weight": 1.0}},
         },
     },
-}
-
-# Same reference point and sample, evaluated without a transcendental per
-# spectral point: xsec0 * P(p/p0) * T(dT) instead of xsec0 * exp(P + T).
-TRAINING_CONFIGS["atmospheric_nolog"] = {
-    **TRAINING_CONFIGS["atmospheric"],
-    "formulation": "nolog",
-    "pressure_form": "ShiftedReciprocalLaurent",
+    "atmospheric_nolog": {
+        "ref_pressure": 1.0e4,
+        "ref_temperature": 240.0,
+        "temperature_variable": "dT",
+        "formulation": "nolog",
+        "pressure_form": "ShiftedReciprocalLaurent",
+        "temperature_form": "Rational",
+        "sampling": {
+            "method": "atmospheric",
+            "p_range": [1.0, 1.1e5],
+            "N_samples": 2000,
+            "pressure_weight": 0.5,
+        },
+        "bands": {
+            "LW": {"sampling": {"pressure_weight": 0.5}},
+            "SW": {"sampling": {"pressure_weight": 1.0}},
+        },
+    },
 }
 
 FORMULATIONS = {"log": FunctionalAbsorber, "nolog": NoLogFunctionalAbsorber}
@@ -101,7 +111,9 @@ def parse_args() -> argparse.Namespace:
         "since the sampling configuration is what determines it)",
     )
     parser.add_argument("--bands", default="LW,SW")
-    parser.add_argument("--config", default="atmospheric", choices=TRAINING_CONFIGS)
+    parser.add_argument(
+        "--config", default="atmospheric_nolog", choices=TRAINING_CONFIGS
+    )
     return parser.parse_args()
 
 
@@ -252,7 +264,7 @@ continuum = {
     ),
 }
 
-ddq_loc = DATA_DIR / "ddq" / "Additional configurations"
+# ddq_loc = DATA_DIR / "ddq" / "Additional configurations"
 # ddq_files = [
 #     ddq_loc / f"DDQ_{band}_{i}.h5" for band in args.bands.split(",") for i in range(1, 9)
 # ]

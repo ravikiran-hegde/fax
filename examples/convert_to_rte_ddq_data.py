@@ -68,7 +68,8 @@ def verify_against_model(flat, datatree, band):
         b = flat["fax_b"].isel(fax_nspecies=i).values.T
 
         x_p = np.log(
-            p * (1.0 + vmr * float(flat["fax_S"].isel(fax_nspecies=i)))
+            p
+            * (1.0 + vmr * float(flat["fax_S"].isel(fax_nspecies=i)))
             / float(flat["fax_p0"].isel(fax_nspecies=i))
         )
         x_t = t - float(flat["fax_T0"].isel(fax_nspecies=i))
@@ -80,7 +81,9 @@ def verify_against_model(flat, datatree, band):
         hinge = c[0] + c[1] * np.minimum(x_p, c[3]) + c[2] * np.maximum(x_p - c[3], 0.0)
         powers_t = np.stack([x_t**k for k in range(3)], axis=0)  # (term, point, 1)
         rational = (powers_t * a[:, None, :]).sum(0) / (powers_t * b[:, None, :]).sum(0)
-        rebuilt = flat["fax_sigma0"].isel(fax_nspecies=i).values * np.exp(hinge + rational)
+        rebuilt = flat["fax_sigma0"].isel(fax_nspecies=i).values * np.exp(
+            hinge + rational
+        )
 
         reference = model.cross_section(p, t, vmr)
         finite = (reference > 1e-40) & np.isfinite(rebuilt)
@@ -90,7 +93,9 @@ def verify_against_model(flat, datatree, band):
         )
 
     if worst > 1e-8:
-        raise AssertionError(f"{band}: flat file disagrees with the model by {worst:.2e}")
+        raise AssertionError(
+            f"{band}: flat file disagrees with the model by {worst:.2e}"
+        )
     print(f"{band}: flat file reproduces the model (max |dln xsec| = {worst:.1e})")
 
 
