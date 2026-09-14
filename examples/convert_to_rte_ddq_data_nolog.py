@@ -5,7 +5,7 @@ The companion of convert_to_rte_ddq_data.py for
 xsec = sigma0 * P(x) * N(dT)/D(dT), with
 x = (p/p0)*(1 + vmr*S)/(1 + vmr0*S),
 P(x) = lin*x + (1 - lin)/Q(w), w = (x + shift)/(1 + shift) and
-Q(w) = c0*c1/w + c0*(1 - c1) + (1 - c0)*w.
+Q(w) = c0/w + (1 - c0)*w.
 """
 
 import argparse
@@ -107,10 +107,9 @@ SW_ORDER = [
 ]
 
 PRESSURE_TERMS = (
-    "Order: c0, c1, shift, lin. With x = (p/fax_p0)*(1 + vmr*fax_S)/"
+    "Order: c0, shift, lin. With x = (p/fax_p0)*(1 + vmr*fax_S)/"
     "(1 + fax_vmr0*fax_S) and w = (x + shift)/(1 + shift) the pressure factor "
-    "is lin*x + (1 - lin)/Q(w), where "
-    "Q(w) = c0*c1/w + c0*(1 - c1) + (1 - c0)*w is 1 at x = 1."
+    "is lin*x + (1 - lin)/Q(w), where Q(w) = c0/w + (1 - c0)*w is 1 at x = 1."
 )
 
 VARIABLE_ATTRS = {

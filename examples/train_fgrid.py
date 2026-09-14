@@ -13,7 +13,7 @@ from faxsec.constants import (
     REFERENCE_VMR,
     SELF_SCALING,
 )
-from faxsec.functional import FunctionalAbsorber
+from faxsec.functional import FunctionalAbsorber, NoLogFunctionalAbsorber
 from faxsec.log_config import setup_logging
 from faxsec.utils import (
     DEFAULT_REFERENCE_MEMORY_BUDGET,
@@ -30,18 +30,25 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 
 # Named training configurations. Each gives the reference point the fit is
-# anchored at and how the (p, T) training sample is drawn; bands may differ.
+# anchored at, the forms fitted, and how the (p, T) training sample is drawn;
+# bands may override any of it.
 TRAINING_CONFIGS = {
     "legacy": {
         "ref_pressure": REF_PRESSURE,
         "ref_temperature": REF_TEMPERATURE,
         "temperature_variable": "dT",
+        "formulation": "log",
+        "pressure_form": "Hinge",
+        "temperature_form": "Rational",
         "sampling": {"method": "natural", "p_range": [0.01, 110000], "N_samples": 1000},
     },
     "atmospheric": {
         "ref_pressure": 1.0e4,
         "ref_temperature": 240.0,
         "temperature_variable": "dT",
+        "formulation": "log",
+        "pressure_form": "Hinge",
+        "temperature_form": "Rational",
         "sampling": {
             "method": "atmospheric",
             "p_range": [1.0, 1.1e5],
@@ -57,15 +64,34 @@ TRAINING_CONFIGS = {
             "SW": {"sampling": {"pressure_weight": 1.0}},
         },
     },
+    "atmospheric_nolog": {
+        "ref_pressure": 1.0e4,
+        "ref_temperature": 240.0,
+        "temperature_variable": "dT",
+        "formulation": "nolog",
+        "pressure_form": "ShiftedReciprocalLaurent",
+        "temperature_form": "Rational",
+        "sampling": {
+            "method": "atmospheric",
+            "p_range": [1.0, 1.1e5],
+            "N_samples": 2000,
+            "pressure_weight": 0.5,
+        },
+        "bands": {
+            "LW": {"sampling": {"pressure_weight": 0.5}},
+            "SW": {"sampling": {"pressure_weight": 1.0}},
+        },
+    },
 }
+
+FORMULATIONS = {"log": FunctionalAbsorber, "nolog": NoLogFunctionalAbsorber}
 
 
 def band_config(config: dict, band: str) -> dict:
     """Configuration for one band, with any band overrides merged in."""
     resolved = {k: v for k, v in config.items() if k != "bands"}
     resolved["sampling"] = dict(resolved["sampling"])
-    override = config.get("bands", {}).get(band, {})
-    for key, value in override.items():
+    for key, value in config.get("bands", {}).get(band, {}).items():
         if key == "sampling":
             resolved["sampling"].update(value)
         else:
@@ -85,7 +111,9 @@ def parse_args() -> argparse.Namespace:
         "since the sampling configuration is what determines it)",
     )
     parser.add_argument("--bands", default="LW,SW")
-    parser.add_argument("--config", default="atmospheric", choices=TRAINING_CONFIGS)
+    parser.add_argument(
+        "--config", default="atmospheric_nolog", choices=TRAINING_CONFIGS
+    )
     parser.add_argument(
         "--reference-memory",
         type=float,
@@ -118,6 +146,9 @@ def train_fax(
     ref_pressure: float = REF_PRESSURE,
     ref_temperature: float = REF_TEMPERATURE,
     temperature_variable: str = "dT",
+    pressure_form: str = "Hinge",
+    temperature_form: str = "Rational",
+    formulation: str = "log",
     memory_budget: int = DEFAULT_REFERENCE_MEMORY_BUDGET,
     save_path: str | Path | None = None,
     frequency_chunk: int = 2000,
@@ -158,10 +189,10 @@ def train_fax(
         arts_reference_kwargs={"memory_budget": memory_budget},
     )
 
-    func_abs = FunctionalAbsorber(
+    func_abs = FORMULATIONS[formulation](
         species=species,
-        pressure_form_name="Hinge",
-        temperature_form_name="Rational",
+        pressure_form_name=pressure_form,
+        temperature_form_name=temperature_form,
         frequency_grid=frequency_grid,
         self_scaling=SELF_SCALING.get(species, 0.0),
         xsec_floor=xsec_relevance_floor(species),
@@ -299,7 +330,8 @@ def main() -> None:
         config = band_config(base_config, band)
         sampling_kwargs = config["sampling"]
         reference_cache_dir = DATA_DIR / "reference" / f"{case_name}{reference_suffix}"
-        species_dir = DATA_DIR / "ff" / f"species_{case_name}{suffix}"
+        # partial fits are per formulation, so they cannot be shared across configs
+        species_dir = DATA_DIR / "ff" / f"species_{case_name}_{args.config}{suffix}"
         species_dir.mkdir(parents=True, exist_ok=True)
 
         # lines
@@ -313,6 +345,9 @@ def main() -> None:
                 ref_pressure=config["ref_pressure"],
                 ref_temperature=config["ref_temperature"],
                 temperature_variable=config["temperature_variable"],
+                pressure_form=config["pressure_form"],
+                temperature_form=config["temperature_form"],
+                formulation=config["formulation"],
                 memory_budget=reference_memory_budget,
                 save_path=species_dir / f"{sp}.nc",
                 frequency_chunk=args.frequency_chunk,
