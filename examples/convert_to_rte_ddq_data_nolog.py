@@ -251,13 +251,13 @@ def verify_against_model(flat, datatree, band):
             x_t = np.clip(x_t, *model.coeffs.x_t_range)
         x_p, x_t = x_p[:, None], x_t[:, None]
 
-        w = (x_p + c[2]) / (1.0 + c[2])
+        w = (x_p + c[1]) / (1.0 + c[1])
         powers_t = np.stack([x_t**k for k in range(3)], axis=0)  # (term, point, 1)
         # Frequencies with no usable reference keep zero coefficients; the mask
         # below drops them, so let the division there go to infinity.
         with np.errstate(divide="ignore", invalid="ignore"):
-            pressure = c[3] * x_p + (1.0 - c[3]) / (
-                c[0] * c[1] / w + c[0] * (1.0 - c[1]) + (1.0 - c[0]) * w
+            pressure = c[2] * x_p + (1.0 - c[2]) / (
+                c[0] / w + (1.0 - c[0]) * w
             )
             rational = (powers_t * a[:, None, :]).sum(0) / (
                 powers_t * b[:, None, :]

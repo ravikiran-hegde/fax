@@ -253,9 +253,9 @@ class HingeForm(FunctionalForm):
 
 class ShiftedReciprocalLaurentForm(FunctionalForm):
     """lin*x + (1 - lin)/Q(w), with w = (x + shift)/(1 + shift) and
-    Q(w) = c0*c1/w + c0*(1 - c1) + (1 - c0)*w.
+    Q(w) = c0/w + (1 - c0)*w.
 
-    Defined for x > 0 and equal to 1 at x = 1, since Q's three branch weights
+    Defined for x > 0 and equal to 1 at x = 1, since Q's two branch weights
     sum to 1. Every coefficient lies in [0, 1], which makes the form positive
     everywhere, no pole.
     """
@@ -270,19 +270,17 @@ class ShiftedReciprocalLaurentForm(FunctionalForm):
         Parameters
         ----------
         x : np.ndarray (N,)
-        coeffs : np.ndarray (4, F)
-            Rows: the two branch shares, the shift, the linear share.
+        coeffs : np.ndarray (3, F)
+            Rows: the branch share, the shift, the linear share.
 
         Returns
         -------
         np.ndarray (N, F)
         """
-        c0, c1, shift, lin = coeffs[:, None, :]
+        c0, shift, lin = coeffs[:, None, :]
         x_col = np.ravel(x)[:, None]
         w = np.maximum(x_col + shift, 1e-30) / (1.0 + shift)
-        return lin * x_col + (1.0 - lin) / (
-            c0 * c1 / w + c0 * (1.0 - c1) + (1.0 - c0) * w
-        )
+        return lin * x_col + (1.0 - lin) / (c0 / w + (1.0 - c0) * w)
 
     def fit(
         self,
@@ -296,10 +294,10 @@ class ShiftedReciprocalLaurentForm(FunctionalForm):
 
         x = np.ravel(x)
         n_freq = y.shape[1]
-        coeffs = np.zeros((4, n_freq))
-        coeffs[0] = 1.0  # a frequency with no usable samples keeps Q(w) = 1
+        coeffs = np.zeros((3, n_freq))
+        coeffs[2] = 1.0  # a frequency with no usable samples keeps P(x) = x
         lower, upper = self.bounds(coeffs[:, 0])
-        breaks = np.geomspace(max(x.min(), 1e-30), upper[2], self.n_breaks)
+        breaks = np.geomspace(max(x.min(), 1e-30), upper[1], self.n_breaks)
 
         logger.info(
             "Fitting ShiftedReciprocalLaurent model (%d shifts)...", breaks.size
@@ -320,7 +318,7 @@ class ShiftedReciprocalLaurentForm(FunctionalForm):
             seeds = []
             for shift in breaks:
                 w = (x + shift) / (1.0 + shift)
-                terms = np.stack([1.0 / w, np.ones_like(w), w], axis=1)
+                terms = np.stack([1.0 / w, w], axis=1)
                 # A least-squares weight in y becomes 1/Q on the reciprocal.
                 z = 1.0 / y_safe
                 q = np.ones_like(z)
@@ -328,17 +326,11 @@ class ShiftedReciprocalLaurentForm(FunctionalForm):
                     row = w_col / np.maximum(np.abs(q), FIT_EPS)
                     seed, _ = nnls(terms * row[:, None], z * row)
                     q = terms @ seed
-                # Only Q's shape matters, so keep the shares its three branches
+                # Only Q's shape matters, so keep the share its two branches
                 # hold at w = 1 and let the anchor there set the level.
                 if not seed.sum() > 0:
                     continue
-                shares = seed / seed.sum()
-                near = shares[0] + shares[1]
-                start = np.clip(
-                    [near, shares[0] / near if near > 0 else 0.0, shift, 0.0],
-                    lower,
-                    upper,
-                )
+                start = np.clip([seed[0] / seed.sum(), shift, 0.0], lower, upper)
                 seeds.append((float(np.sum(residual(start) ** 2)), start))
 
             best, best_rss = None, np.inf
@@ -359,10 +351,10 @@ class ShiftedReciprocalLaurentForm(FunctionalForm):
         return coeffs
 
     def bounds(self, coeffs: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        return np.zeros(4), np.ones(4)
+        return np.zeros(3), np.ones(3)
 
     def coefficient_names(self) -> List[str]:
-        return ["c0", "c1", "shift", "lin"]
+        return ["c0", "shift", "lin"]
 
 
 class SmoothHingeForm(HingeForm):
