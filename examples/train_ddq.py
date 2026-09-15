@@ -40,6 +40,7 @@ TRAINING_CONFIGS = {
         "formulation": "log",
         "pressure_form": "Hinge",
         "temperature_form": "Rational",
+        "max_iter": 10,
         "sampling": {"method": "natural", "p_range": [0.01, 110000], "N_samples": 1000},
     },
     "atmospheric": {
@@ -49,6 +50,7 @@ TRAINING_CONFIGS = {
         "formulation": "log",
         "pressure_form": "Hinge",
         "temperature_form": "Rational",
+        "max_iter": 10,
         "sampling": {
             "method": "atmospheric",
             "p_range": [1.0, 1.1e5],
@@ -71,6 +73,7 @@ TRAINING_CONFIGS = {
         "formulation": "nolog",
         "pressure_form": "ShiftedReciprocalLaurent",
         "temperature_form": "Rational",
+        "max_iter": 4,
         "sampling": {
             "method": "atmospheric",
             "p_range": [1.0, 1.1e5],
@@ -137,6 +140,7 @@ def train_fax(
     pressure_form: str = "Hinge",
     temperature_form: str = "Rational",
     formulation: str = "log",
+    max_iter: int = 10,
 ) -> FunctionalAbsorber:
     """Train a FAX model for a given species and frequency grid.
 
@@ -186,7 +190,7 @@ def train_fax(
             arts_tag=arts_tag,
             cache_dir=reference_cache_dir,
         ),
-        max_iter=10,
+        max_iter=max_iter,
         sampling_kwargs=sampling_kwargs,
     )
 
@@ -305,6 +309,7 @@ for ddq_case in ddq_files:
             pressure_form=config["pressure_form"],
             temperature_form=config["temperature_form"],
             formulation=config["formulation"],
+            max_iter=config["max_iter"],
         )
         absorbers[sp] = func_abs
 

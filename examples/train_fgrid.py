@@ -40,6 +40,7 @@ TRAINING_CONFIGS = {
         "formulation": "log",
         "pressure_form": "Hinge",
         "temperature_form": "Rational",
+        "max_iter": 10,
         "sampling": {"method": "natural", "p_range": [0.01, 110000], "N_samples": 1000},
     },
     "atmospheric": {
@@ -49,6 +50,7 @@ TRAINING_CONFIGS = {
         "formulation": "log",
         "pressure_form": "Hinge",
         "temperature_form": "Rational",
+        "max_iter": 10,
         "sampling": {
             "method": "atmospheric",
             "p_range": [1.0, 1.1e5],
@@ -71,6 +73,7 @@ TRAINING_CONFIGS = {
         "formulation": "nolog",
         "pressure_form": "ShiftedReciprocalLaurent",
         "temperature_form": "Rational",
+        "max_iter": 4,
         "sampling": {
             "method": "atmospheric",
             "p_range": [1.0, 1.1e5],
@@ -149,6 +152,7 @@ def train_fax(
     pressure_form: str = "Hinge",
     temperature_form: str = "Rational",
     formulation: str = "log",
+    max_iter: int = 10,
     memory_budget: int = DEFAULT_REFERENCE_MEMORY_BUDGET,
     save_path: str | Path | None = None,
     frequency_chunk: int = 2000,
@@ -211,7 +215,7 @@ def train_fax(
         frequency_chunk=frequency_chunk,
         n_workers=n_workers,
         save_path=save_path,
-        max_iter=10,
+        max_iter=max_iter,
     )
 
     return func_abs
@@ -348,6 +352,7 @@ def main() -> None:
                 pressure_form=config["pressure_form"],
                 temperature_form=config["temperature_form"],
                 formulation=config["formulation"],
+                max_iter=config["max_iter"],
                 memory_budget=reference_memory_budget,
                 save_path=species_dir / f"{sp}.nc",
                 frequency_chunk=args.frequency_chunk,

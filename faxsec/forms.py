@@ -260,7 +260,7 @@ class ShiftedReciprocalLaurentForm(FunctionalForm):
     everywhere, no pole.
     """
 
-    def __init__(self, n_breaks: int = 20, n_reweight: int = 6, n_refine: int = 3):
+    def __init__(self, n_breaks: int = 10, n_reweight: int = 3, n_refine: int = 2):
         self.n_breaks = n_breaks
         self.n_reweight = n_reweight
         self.n_refine = n_refine
@@ -449,7 +449,8 @@ class RationalForm(FunctionalForm):
         regularization: float = 1e-2
         den_floor: float = 0.1
         collocation_margin: float = 0.05
-        max_nfev: int = 800
+        # The fit flattens out well inside this budget; what follows is drift.
+        max_nfev: int = 100
 
     def fit(
         self,
