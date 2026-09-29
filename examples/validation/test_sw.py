@@ -95,18 +95,15 @@ for sp in species.keys():
 # %% continuum absorbers
 from faxsec.continuum import H2OContinuum
 
-h2o_cont = H2OContinuum(
-    frequency_grid=frequency_grid,
-    data_source="../../data/continuum/absco-ref_wv-mt-ckd400.nc",
-)
+h2o_cont = H2OContinuum(frequency_grid=frequency_grid)
 absorbers["H2O_continuum"] = h2o_cont
 
 arts_absorbers["H2O_continuum"] = ARTSAbsorber(
     species="H2O",
     frequency_grid=frequency_grid,
     arts_tag=(
-        "H2O-ForeignContCKDMT400",
-        "H2O-SelfContCKDMT400",
+        "H2O-ForeignContCKDMT430",
+        "H2O-SelfContCKDMT430",
     ),
 )
 # %% Halocarbon absorbers

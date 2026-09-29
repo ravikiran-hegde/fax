@@ -41,7 +41,7 @@ from pyarts3.recipe import SingleSpeciesAbsorption
 
 pyarts3.data.download(version=PYARTS_VERSION)
 
-cont = SingleSpeciesAbsorption(species="H2O-ForeignContCKDMT400")
+cont = SingleSpeciesAbsorption(species="H2O-ForeignContCKDMT430")
 
 atm = pyarts3.arts.AtmPoint()
 for sp in DEFAULT_VMR:

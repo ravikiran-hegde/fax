@@ -39,7 +39,7 @@ from .abstract_class import (
     SingleSpeciesModel,
 )
 
-DEFAULT_CONTINUUM_DATA = DATA_DIR / "continuum" / "absco-ref_wv-mt-ckd400.nc"
+DEFAULT_CONTINUUM_DATA = DATA_DIR / "continuum" / "absco-ref_wv-mt-ckd.nc"
 
 
 @dataclass
@@ -47,7 +47,7 @@ class ContinuumConfig(AbsorberConfig):
     """Configuration for the continuum absorber."""
 
     continuum_type: str = ""  # self or foreign or both
-    model: str = "MT_CKD_4.0"
+    model: str = "MT_CKD_4.3"
     data_source: Optional[str | Path] = DEFAULT_CONTINUUM_DATA
 
 
@@ -69,6 +69,7 @@ class ContinuumAbsorber(SingleSpeciesModel, SavableModel):
                 species=species,
                 frequency_grid=frequency_grid,
                 continuum_type=continuum_type,
+                model=self._data.attrs.get("model", ContinuumConfig.model),
                 data_source=self._data.attrs.get("data_source", None),
             )
         else:
@@ -231,6 +232,7 @@ class H2OContinuum(ContinuumAbsorber):
             species="H2O",
             frequency_grid=frequency_grid,
             continuum_type="both",
+            model=self._self_continuum.config.model,
             data_source=data_source,
         )
 
@@ -278,6 +280,7 @@ class SelfContinuumAbsorber(ContinuumAbsorber):
                 species=species,
                 frequency_grid=frequency_grid,
                 continuum_type="self",
+                model=self._data.attrs.get("model", ContinuumConfig.model),
                 data_source=self._data.attrs.get("data_source", None),
             )
         else:
@@ -334,6 +337,7 @@ class ForeignContinuumAbsorber(ContinuumAbsorber):
                 species=species,
                 frequency_grid=frequency_grid,
                 continuum_type="foreign",
+                model=self._data.attrs.get("model", ContinuumConfig.model),
                 data_source=self._data.attrs.get("data_source", None),
             )
         else:

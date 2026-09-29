@@ -272,8 +272,8 @@ halocarbons = {
 
 continuum = {
     "H2O": (
-        "H2O-ForeignContCKDMT400",
-        "H2O-SelfContCKDMT400",
+        "H2O-ForeignContCKDMT430",
+        "H2O-SelfContCKDMT430",
     ),
 }
 
@@ -375,10 +375,7 @@ def main() -> None:
         from faxsec.continuum import H2OContinuum
 
         for sp in continuum.keys():
-            absorbers[f"{sp}_continuum"] = H2OContinuum(
-                frequency_grid=frequency_grid,
-                data_source=DATA_DIR / "continuum" / "absco-ref_wv-mt-ckd400.nc",
-            )
+            absorbers[f"{sp}_continuum"] = H2OContinuum(frequency_grid=frequency_grid)
 
         # trapezoidal integration weights over the (non-uniform) Hz frequency grid
         weights_hz = np.empty_like(frequency_grid)
