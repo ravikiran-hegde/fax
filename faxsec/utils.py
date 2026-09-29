@@ -562,8 +562,12 @@ def sample_atmospheres_natural(
 # Temperature range to fit over at each pressure, as
 # (pressure [Pa], T_min [K], T_max [K]) knots interpolated in log-pressure.
 # Wider than the present-day atmosphere at every level so the fit also covers
-# glacial and high-CO2 climates; the extremes span 120 K to 360 K.
+# glacial and high-CO2 climates; the extremes span 120 K to 360 K. The two
+# lowest knots carry the mesopause cold point and the thermospheric rise above
+# it, so the fit spans the whole 0.01 Pa to 1.1e5 Pa range the model is used on.
 ATMOSPHERIC_T_ENVELOPE = (
+    (0.01, 130.0, 360.0),
+    (0.1, 120.0, 300.0),
     (1.0, 120.0, 260.0),
     (10.0, 160.0, 300.0),
     (100.0, 155.0, 325.0),

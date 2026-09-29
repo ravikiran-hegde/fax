@@ -53,7 +53,7 @@ TRAINING_CONFIGS = {
         "max_iter": 10,
         "sampling": {
             "method": "atmospheric",
-            "p_range": [1.0, 1.1e5],
+            "p_range": [0.01, 1.1e5],
             "N_samples": 2000,
             "pressure_weight": 0.5,
         },
@@ -76,7 +76,7 @@ TRAINING_CONFIGS = {
         "max_iter": 4,
         "sampling": {
             "method": "atmospheric",
-            "p_range": [1.0, 1.1e5],
+            "p_range": [0.01, 1.1e5],
             "N_samples": 2000,
             "pressure_weight": 0.5,
         },
