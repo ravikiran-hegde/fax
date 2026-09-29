@@ -423,7 +423,7 @@ SamplingResult = Tuple[np.ndarray, np.ndarray]
 
 def sample_atmospheres(
     p_range: Sequence[float] = [0.01, 110000],
-    T_range: Sequence[float] = [150.0, 350.0],
+    T_range: Sequence[float] = [120.0, 360.0],
     N_samples: int = 1000,
     seed: int | None = 42,
     method: str = "natural",
@@ -559,16 +559,18 @@ def sample_atmospheres_natural(
     return p, T
 
 
-# Temperature range the atmosphere actually occupies, as
+# Temperature range to fit over at each pressure, as
 # (pressure [Pa], T_min [K], T_max [K]) knots interpolated in log-pressure.
+# Wider than the present-day atmosphere at every level so the fit also covers
+# glacial and high-CO2 climates; the extremes span 120 K to 360 K.
 ATMOSPHERIC_T_ENVELOPE = (
-    (1.0, 150.0, 250.0),
-    (10.0, 190.0, 290.0),
-    (100.0, 185.0, 315.0),
-    (1.0e3, 160.0, 290.0),
-    (1.0e4, 160.0, 260.0),
-    (3.0e4, 170.0, 280.0),
-    (1.0e5, 195.0, 350.0),
+    (1.0, 120.0, 260.0),
+    (10.0, 160.0, 300.0),
+    (100.0, 155.0, 325.0),
+    (1.0e3, 130.0, 300.0),
+    (1.0e4, 130.0, 270.0),
+    (3.0e4, 140.0, 290.0),
+    (1.0e5, 165.0, 360.0),
 )
 
 

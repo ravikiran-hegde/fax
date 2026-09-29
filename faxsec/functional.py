@@ -596,10 +596,6 @@ class NoLogFunctionalAbsorber(FunctionalAbsorber):
 
     pressure_variables = (p_ratio, p_ratio_withself)
 
-    @property
-    def class_name(self) -> str:
-        return f"NoLog_{super().class_name}"
-
     def cross_section_from_x_vars(
         self,
         x_p: np.ndarray,

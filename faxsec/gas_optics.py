@@ -342,7 +342,7 @@ absorber_registry: Dict[str, Type[SingleSpeciesModel | SavableModel]] = {
     "ARTS_SingleSpeciesRecipe": ARTSAbsorber,
     "XFIT": CrossFitAbsorber,
     "Hinge_Rational": FunctionalAbsorber,
-    "NoLog_ShiftedReciprocalLaurent_Rational": NoLogFunctionalAbsorber,
+    "ShiftedReciprocalLaurent_Rational": NoLogFunctionalAbsorber,
     "both_continuum_MT_CKD_4_3": H2OContinuum,
     "both_continuum_MT_CKD_4_0": H2OContinuum,
 }

@@ -27,7 +27,8 @@ parser.add_argument("--out-dir", default=Path("/Users/rk/Work/ddq-data"), type=P
 args = parser.parse_args()
 args.out_dir.mkdir(parents=True, exist_ok=True)
 
-FAX_GROUP = "NoLog_ShiftedReciprocalLaurent_Rational"
+FAX_GROUP = "ShiftedReciprocalLaurent_Rational"
+CONT_GROUP = "both_continuum_MT_CKD_4_3"
 
 # Model variables the Fortran reader does not consume; the file layout is fixed.
 DROP_VARS = [
@@ -305,7 +306,7 @@ def flatten(band):
     lines["fax_b"] = xr.concat([ones, rest], dim="fax_t_order")
     lines = lines.drop_vars(DROP_VARS, errors="ignore")
 
-    cont = data["both_continuum_MT_CKD_4_0"].to_dataset().rename(CONT_RENAME)
+    cont = data[CONT_GROUP].to_dataset().rename(CONT_RENAME)
 
     xsec = (
         xr.concat(
