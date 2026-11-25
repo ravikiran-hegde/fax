@@ -36,3 +36,5 @@ data/ddq/LUTs/**/*.bin
 data/ff/*
 !data/ff/gas_optics_DDQ_LW.nc
 !data/ff/gas_optics_DDQ_SW.nc
+!data/ff/gas_optics_Highres_LW_100000.nc
+!data/ff/gas_optics_Highres_SW_100001.nc
