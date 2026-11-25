@@ -113,88 +113,40 @@ class CrossFitAbsorber(SingleSpeciesModel, SavableModel):
         return interpolated_ds
 
     @staticmethod
-    def _extract_band_name(name: str) -> int:
-        prefix = name.removesuffix("_coeffs")
-        if not prefix.startswith("band"):
-            raise ValueError(f"Unexpected band variable name: {name}")
-        return int(prefix.removeprefix("band"))
-
-    @staticmethod
     def _xsec_xml_to_dataset(xml_path: str | Path) -> xr.Dataset:
-        """Load an ARTS XsecRecord XML file into an xarray Dataset.
-
-        The XML is read with ``pyarts3.xml.load(...).to_xarray()`` and then
-        flattened into a single monotonic frequency axis because the bands in the
-        record are disjoint.
-        """
-        xml_path = Path(xml_path)
+        """Load an ARTS XsecRecord XML file, its disjoint bands joined into one
+        monotonic frequency axis."""
         import pyarts3  # optional dependency
 
-        source = pyarts3.xml.load(str(xml_path)).to_xarray()
+        xml_path = Path(xml_path)
+        record = pyarts3.xml.load(str(xml_path))
+        species = xml_path.stem.split("-")[0]
 
-        species = xml_path.stem.split("-")[0]  # extract from xml path
-        # species = source.attrs.get("species")
-        # if species is None:
-        #     raise ValueError(f"Species metadata missing in {xml_path}")
+        bands = list(record.fitcoeffs)
+        if not bands:
+            raise ValueError(f"No fit bands in {xml_path}")
+        frequency_blocks = [np.asarray(band.grids[0], dtype=float) for band in bands]
+        if any(block.size == 0 for block in frequency_blocks):
+            raise ValueError(f"Empty frequency grid in {xml_path}")
+        if any(
+            later[0] <= earlier[-1]
+            for earlier, later in zip(frequency_blocks, frequency_blocks[1:])
+        ):
+            raise ValueError("Fit coefficient bands overlap or are not strictly ordered")
 
-        band_names = [name for name in source.data_vars if name.endswith("_coeffs")]
-        if not band_names:
-            raise ValueError(f"No band coefficient variables found in {xml_path}")
-
-        band_names = sorted(band_names, key=CrossFitAbsorber._extract_band_name)
-        frequency_blocks: list[np.ndarray] = []
-        coefficient_blocks: list[np.ndarray] = []
-        n_frequency: list[int] = []
-
-        band_start_frequency: list[float] = []
-        band_end_frequency: list[float] = []
-        min_pressures = np.asarray(source["fitminpressures"].values, dtype=float)
-        max_pressures = np.asarray(source["fitmaxpressures"].values, dtype=float)
-        min_temperatures = np.asarray(source["fitmintemperatures"].values, dtype=float)
-        max_temperatures = np.asarray(source["fitmaxtemperatures"].values, dtype=float)
-        coefficient_names = np.asarray(source[band_names[0]].coords["coeffs"].values)
-        coefficient_vars = [str(name) for name in coefficient_names]
-
-        previous_stop: float | None = None
-        for band_name in band_names:
-            band_frequency_dim = next(
-                dim for dim in source[band_name].dims if dim != "coeffs"
-            )
-            band_frequency = np.asarray(
-                source.coords[band_frequency_dim].values, dtype=float
-            )
-            band_coefficients = np.asarray(source[band_name].values, dtype=float)
-
-            if band_frequency.size == 0:
-                raise ValueError(f"Empty frequency grid in {band_name} of {xml_path}")
-            if previous_stop is not None and band_frequency[0] <= previous_stop:
-                raise ValueError(
-                    "Fit coefficient bands overlap or are not strictly ordered"
-                )
-            previous_stop = float(band_frequency[-1])
-
-            frequency_blocks.append(band_frequency)
-            for coeff_index, coeff_name in enumerate(coefficient_vars):
-                if len(coefficient_blocks) <= coeff_index:
-                    coefficient_blocks.append([])
-                coefficient_blocks[coeff_index].append(
-                    band_coefficients[:, coeff_index]
-                )
-            n_frequency.append(band_frequency.size)
-            band_start_frequency.append(float(band_frequency[0]))
-            band_end_frequency.append(float(band_frequency[-1]))
-
+        n_frequency = [block.size for block in frequency_blocks]
         frequency = np.concatenate(frequency_blocks)
-        band_id = np.concatenate(
-            [np.full(size, idx, dtype=int) for idx, size in enumerate(n_frequency)]
-        )
-
+        band_id = np.repeat(np.arange(len(bands)), n_frequency)
+        coefficients = np.concatenate([np.asarray(band.data, dtype=float) for band in bands])
         flattened_coefficients = {
-            coeff_name: np.concatenate(blocks, axis=0)
-            for coeff_name, blocks in zip(
-                coefficient_vars, coefficient_blocks, strict=True
-            )
+            str(name): coefficients[:, i] for i, name in enumerate(bands[0].grids[1])
         }
+        min_pressures = np.asarray(record.fitminpressures, dtype=float)
+        max_pressures = np.asarray(record.fitmaxpressures, dtype=float)
+        min_temperatures = np.asarray(record.fitmintemperatures, dtype=float)
+        max_temperatures = np.asarray(record.fitmaxtemperatures, dtype=float)
+        band_start_frequency = [float(block[0]) for block in frequency_blocks]
+        band_end_frequency = [float(block[-1]) for block in frequency_blocks]
 
         return xr.Dataset(
             {
