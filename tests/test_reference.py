@@ -214,3 +214,15 @@ def test_frequency_chunks_train_to_the_same_fit(tmp_path):
     np.testing.assert_array_equal(
         resumed.coeffs.pressure_coeffs, whole.coeffs.pressure_coeffs
     )
+
+    # a run interrupted inside a chunk leaves part of it saved
+    with xr.open_dataset(save_path) as saved:
+        partial = saved.isel(frequency=slice(0, 4)).load()
+    partial.to_netcdf(save_path)
+    resumed = model()
+    resumed.train_in_frequency_chunks(
+        reference, frequency_chunk=3, n_workers=2, save_path=save_path, max_iter=4
+    )
+    np.testing.assert_array_equal(
+        resumed.coeffs.pressure_coeffs, whole.coeffs.pressure_coeffs
+    )

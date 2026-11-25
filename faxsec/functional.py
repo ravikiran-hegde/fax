@@ -355,29 +355,23 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
         """Fit the frequency grid in chunks, one process per chunk.
 
         Frequencies are fitted independently, so each chunk is a full training
-        run over its own slice of the reference. Chunks already present in
-        ``save_path`` are not refitted, and the file is rewritten as each one
+        run over its own slice of the reference. Frequencies already in
+        ``save_path`` are not refitted, and the file is rewritten as each chunk
         arrives.
         """
 
         grid = np.asarray(self.config.frequency_grid, dtype=float)
-        chunks = [
-            slice(start, min(start + frequency_chunk, grid.size))
-            for start in range(0, grid.size, frequency_chunk)
-        ]
         concat = dict(
             dim="frequency", data_vars="minimal", coords="minimal", compat="override"
         )
 
         parts = []
+        done = np.zeros(grid.size, dtype=bool)
         if save_path is not None and Path(save_path).exists():
             with xr.open_dataset(save_path) as saved:
                 parts.append(saved.load())
-            chunks = [
-                chunk
-                for chunk in chunks
-                if not np.isin(grid[chunk], parts[0]["frequency"].values).all()
-            ]
+            done = np.isin(grid, parts[0]["frequency"].values)
+        chunks = _missing_chunks(done, frequency_chunk)
 
         logger.info(
             "Training %s in %d chunk(s) of %d frequencies on %s workers",
@@ -409,10 +403,10 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
                 )
                 if save_path is not None:
                     tmp_path = Path(save_path).with_suffix(".partial")
-                    xr.concat(parts, **concat).sortby("frequency").to_netcdf(tmp_path)
+                    _join(parts, concat).to_netcdf(tmp_path)
                     tmp_path.replace(save_path)
 
-        trained = xr.concat(parts, **concat).sortby("frequency")
+        trained = _join(parts, concat)
         self.coeffs = type(self).from_dataset(trained.isel(species=0)).coeffs
 
     def to_dataset(self) -> xr.Dataset:
@@ -570,6 +564,22 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
             )
 
         return source
+
+
+def _missing_chunks(done: np.ndarray, size: int) -> list[slice]:
+    """Slices of at most ``size`` covering the frequencies not yet fitted."""
+    todo = np.flatnonzero(~done)
+    runs = np.split(todo, np.flatnonzero(np.diff(todo) > 1) + 1)
+    return [
+        slice(int(run[start]), int(run[min(start + size, run.size) - 1]) + 1)
+        for run in runs
+        for start in range(0, run.size, size)
+    ]
+
+
+def _join(parts: list[xr.Dataset], concat: dict) -> xr.Dataset:
+    """Fitted chunks as one dataset, in frequency order."""
+    return xr.concat(parts, **concat).sortby("frequency")
 
 
 THREAD_VARIABLES = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS")
