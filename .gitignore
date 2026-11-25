@@ -1,16 +1,38 @@
-settings.json
-*.code-workspace
+# python
 __pycache__/
-.conda/
+*.egg-info/
+.pytest_cache/
+
+# editors and local environments
 .DS_Store
-data/
+.vscode/
+.conda/
+.claude/
+*.code-workspace
+settings.json
+
+# local work
 temp/
+analysis/
 figures/
+logs/
+*insights/
 *.pdf
 *.png
 *.log
 *.npz
 *.nc
-*egg-info/
-*insights/
-.claude/
+
+# data
+!data/**/*.nc
+data/analysis/
+data/config/
+data/reference*/
+data/rfmip/
+data/rte_examples/*
+!data/rte_examples/*-states.nc
+data/solar_spectra/DDQ_SW_source.h5
+data/ddq/LUTs/**/*.bin
+data/ff/*
+!data/ff/gas_optics_DDQ_LW.nc
+!data/ff/gas_optics_DDQ_SW.nc
