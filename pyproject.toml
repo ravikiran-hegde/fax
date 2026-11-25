@@ -1,21 +1,32 @@
 [project]
 name = "faxsec"
-version = "0.1.0"
+version = "0.2.0"
+description = "Functional forms for gas absorption cross-sections (FAX), trained against ARTS line-by-line"
 readme = "README.md"
+authors = [{ name = "ravikiran-hegde" }]
 requires-python = ">=3.10"
-classifiers=[
+keywords = ["radiative transfer", "gas optics", "absorption", "cross-section", "ARTS"]
+classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Atmospheric Science",
-    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3",
 ]
 dependencies = [
     "dask",
-    "matplotlib",
+    "netCDF4",
     "numpy>=2.0",
-    "xarray",
     "scipy",
+    "xarray>=2024.10",
 ]
+
+[project.optional-dependencies]
+arts = ["pyarts3"]
+rte = ["pyrte_rrtmgp"]
+dev = ["pytest"]
+
+[project.urls]
+Repository = "https://github.com/ravikiran-hegde/fax"
 
 [build-system]
 requires = ["setuptools>=69"]
@@ -24,3 +35,6 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["faxsec*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

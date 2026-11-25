@@ -1,5 +1,6 @@
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, Tuple, Type
 
 import numpy as np
@@ -7,12 +8,39 @@ import xarray as xr
 
 from faxsec.abstract_class import ARRAYLIKE, SavableModel, SingleSpeciesModel
 from faxsec.arts import ARTSAbsorber
-from faxsec.constants import BOLTZMANN
+from faxsec.constants import BOLTZMANN, DATA_DIR
 from faxsec.continuum import H2OContinuum
 from faxsec.functional import FunctionalAbsorber, NoLogFunctionalAbsorber
 from faxsec.xfit import CrossFitAbsorber
 
 logger = logging.getLogger(__name__)
+
+# non-absorber groups of a trained datatree
+AUXILIARY_GROUPS = ("DDQ", "Other")
+
+# shipped trained gas optics in data/ff, by (grid, band)
+TRAINED_FILES = {
+    ("ddq", "LW"): "gas_optics_DDQ_LW.nc",
+    ("ddq", "SW"): "gas_optics_DDQ_SW.nc",
+    ("highres", "LW"): "gas_optics_Highres_LW_100000.nc",
+    ("highres", "SW"): "gas_optics_Highres_SW_100001.nc",
+}
+
+
+def trained_path(band: str = "LW", grid: str = "ddq") -> Path:
+    """Path of a shipped trained gas optics, ``grid`` being "ddq" or "highres"."""
+    path = DATA_DIR / "ff" / TRAINED_FILES[grid.lower(), band.upper()]
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{path} not found (data directory {DATA_DIR}, set by FAXSEC_DATA)"
+        )
+    return path
+
+
+def load_gas_optics(band: str = "LW", grid: str = "ddq") -> "GasOptics":
+    """Load a shipped trained gas optics."""
+    with xr.open_datatree(trained_path(band, grid)) as tree:
+        return GasOptics.from_datatree(tree.load())
 
 
 @dataclass
@@ -73,6 +101,8 @@ class GasOptics:
         absorbers = {}
         for class_name in dt.keys():
             absorber_cls = absorber_registry.get(class_name, None)
+            if class_name in AUXILIARY_GROUPS:
+                continue
             if absorber_cls is None:
                 logger.warning(
                     "Unsupported faxsec class %r in datatree, skipping.", class_name
@@ -84,6 +114,16 @@ class GasOptics:
                     absorber = absorber_cls.from_dataset(sp_ds)
                     absorbers[str(sp) + "_" + class_name] = absorber
         return cls.from_absorbers(absorbers)
+
+    def to_datatree(self) -> xr.DataTree:
+        """Inverse of ``from_datatree``: one group per absorber class."""
+        groups: Dict[str, list] = {}
+        for absorber in self._absorbers.values():
+            ds = absorber.to_dataset()
+            groups.setdefault(ds.attrs["model_class"], []).append(ds)
+        return xr.DataTree.from_dict(
+            {name: xr.concat(parts, dim="species") for name, parts in groups.items()}
+        )
 
     def add_absorber(self, absorber: SingleSpeciesModel) -> None:
         """Add an absorber to the model."""
@@ -346,3 +386,13 @@ absorber_registry: Dict[str, Type[SingleSpeciesModel | SavableModel]] = {
     "both_continuum_MT_CKD_4_3": H2OContinuum,
     "both_continuum_MT_CKD_4_0": H2OContinuum,
 }
+
+
+def write_datatree(datatree: xr.DataTree, path) -> None:
+    """Write a trained datatree with lossless zlib compression."""
+    encoding = {
+        group: {name: {"zlib": True, "complevel": 5} for name in node.data_vars}
+        for group, node in ((g, datatree[g]) for g in datatree.groups)
+        if node.data_vars
+    }
+    datatree.to_netcdf(path, mode="w", encoding=encoding)

@@ -11,7 +11,11 @@ from dataclasses import dataclass
 from typing import Optional, Sequence
 
 import numpy as np
-import pyarts3 as pyarts
+
+try:
+    import pyarts3 as pyarts
+except ImportError:  # optional: only ARTSAbsorber needs it
+    pyarts = None
 
 from faxsec.abstract_class import ARRAYLIKE, AbsorberConfig, SingleSpeciesModel
 from faxsec.constants import DEFAULT_VMR, EPS, REF_VMR
@@ -55,6 +59,8 @@ class ARTSAbsorber(SingleSpeciesModel):
         frequency_grid: ARRAYLIKE,
         arts_tag: Optional[tuple[str, ...]] = None,
     ):
+        if pyarts is None:
+            raise ImportError("ARTSAbsorber needs pyarts3: pip install -e .[arts]")
         arts_tag = arts_tag if arts_tag is not None else (species,)
         self.config = ARTSConfig(
             species=species,

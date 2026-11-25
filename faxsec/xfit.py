@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
-import pyarts3
 import xarray as xr
 
 from faxsec.abstract_class import (
@@ -129,6 +128,8 @@ class CrossFitAbsorber(SingleSpeciesModel, SavableModel):
         record are disjoint.
         """
         xml_path = Path(xml_path)
+        import pyarts3  # optional dependency
+
         source = pyarts3.xml.load(str(xml_path)).to_xarray()
 
         species = xml_path.stem.split("-")[0]  # extract from xml path

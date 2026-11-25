@@ -7,6 +7,7 @@ import numpy as np
 import xarray as xr
 
 from faxsec.constants import (
+    DATA_DIR,
     REF_PRESSURE,
     REF_TEMPERATURE,
     REF_VMR,
@@ -14,6 +15,7 @@ from faxsec.constants import (
     SELF_SCALING,
 )
 from faxsec.functional import FunctionalAbsorber, NoLogFunctionalAbsorber
+from faxsec.gas_optics import GasOptics, write_datatree
 from faxsec.log_config import setup_logging
 from faxsec.utils import (
     ensure_reference_dataset,
@@ -26,8 +28,15 @@ from faxsec.utils import (
 setup_logging()
 logger = logging.getLogger(__name__)
 
-ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data"
+DDQ_DIR = DATA_DIR / "ddq"
+ALTERNATIVE_DDQ_DIR = DDQ_DIR / "Additional configurations"
+
+
+def ddq_path(quadrature: str, band: str) -> Path:
+    """The quadrature file for one band: the default set, or a numbered alternative."""
+    if quadrature == "default":
+        return DDQ_DIR / f"DDQ_{band}.h5"
+    return ALTERNATIVE_DDQ_DIR / f"DDQ_{band}_{quadrature}.h5"
 
 # Named training configurations. Each gives the reference point the fit is
 # anchored at, the forms fitted, and how the (p, T) training sample is drawn;
@@ -109,11 +118,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--reference-suffix",
-        default=None,
-        help="Reference cache to train from (default: named after --config, "
-        "since the sampling configuration is what determines it)",
+        default="",
+        help="Suffix of the reference cache directory (default: none)",
     )
     parser.add_argument("--bands", default="LW,SW")
+    parser.add_argument(
+        "--ddq",
+        default="default",
+        help="Quadrature set: 'default', or the index of one in "
+        "data/ddq/Additional configurations",
+    )
     parser.add_argument(
         "--config", default="atmospheric_nolog", choices=TRAINING_CONFIGS
     )
@@ -123,9 +137,7 @@ def parse_args() -> argparse.Namespace:
 args = parse_args()
 suffix = args.suffix
 base_config = TRAINING_CONFIGS[args.config]
-reference_suffix = (
-    args.reference_suffix if args.reference_suffix is not None else f"_{args.config}"
-)
+reference_suffix = args.reference_suffix
 
 
 def train_fax(
@@ -268,15 +280,9 @@ continuum = {
     ),
 }
 
-# ddq_loc = DATA_DIR / "ddq" / "Additional configurations"
-# ddq_files = [
-#     ddq_loc / f"DDQ_{band}_{i}.h5" for band in args.bands.split(",") for i in range(1, 9)
-# ]
-ddq_files = [DATA_DIR / "ddq" / f"DDQ_{band}.h5" for band in args.bands.split(",")]
-
-for ddq_case in ddq_files:
+for band in args.bands.split(","):
+    ddq_case = ddq_path(args.ddq, band)
     case_name = ddq_case.stem  # e.g. "DDQ_LW"
-    band = case_name.split("_")[1][:2]  # Extract the band (LW or SW) from the filename
 
     kayser_quadrature = xr.load_dataset(ddq_case)
     kayser_grid = kayser_quadrature["S"].values
@@ -369,29 +375,18 @@ for ddq_case in ddq_files:
     ddq.attrs["model_class"] = "DDQ"
 
     # all data together
-    datatree = xr.DataTree()
-    datasets = [absorber.to_dataset() for absorber in absorbers.values()]
-    groups = {}
-    for ds in datasets:
-        key = ds.attrs["model_class"]
-        if key in groups:
-            groups[key] = xr.concat([groups[key], ds], dim="species")
-        else:
-            groups[key] = ds
-
-    for key, ds in groups.items():
-        datatree[key] = ds
+    datatree = GasOptics.from_absorbers(absorbers).to_datatree()
 
     datatree["DDQ"] = ddq
     datatree.attrs.update(
-        reference_cache=str(reference_cache_dir),
+        reference_cache=str(reference_cache_dir.relative_to(DATA_DIR)),
         suffix=suffix,
         training_config=args.config,
         config_detail=str(config),
     )
 
-    output_path = DATA_DIR / "ff" / f"gas_optics_{case_name}{suffix}.nc"
-    datatree.to_netcdf(output_path, mode="w")
+    output_path = DATA_DIR / "ff" / f"gas_optics_DDQ_{band}{suffix}.nc"
+    write_datatree(datatree, output_path)
     logger.info("Saved %s: %d absorbers -> %s", case_name, len(absorbers), output_path)
 
 # %%

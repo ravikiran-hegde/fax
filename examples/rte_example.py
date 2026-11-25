@@ -11,6 +11,7 @@ Supports multiple interchangeable gas-optics backends:
 - ``arts``         -- the same DDQ frequency/weight quadrature, but with
                        every absorber evaluated online through ARTS (no
                        training stage).
+- ``arts-highres`` -- ARTS line by line on the ``fax-highres`` grid.
 - ``rrtmgp``       -- RRTMGP's own G-point gas optics, as an independent
                        reference.
 
@@ -20,6 +21,7 @@ columns for a quick check:
     python rte_example.py --case rfmip --gas-optics fax
     python rte_example.py --case rfmip --gas-optics fax-highres --variant 0 --columns 0:5
     python rte_example.py --case rfmip --gas-optics arts --variant 0 --columns 0:5
+    python rte_example.py --case rce --gas-optics arts-highres --columns 0 --stride 50
     python rte_example.py --case rce --gas-optics rrtmgp --columns 3
 
 This replaces the older arts_ddq_rte_example.py / arts_fast_rte_example.py /
@@ -32,6 +34,7 @@ from __future__ import annotations
 import argparse
 import logging
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -39,8 +42,14 @@ import xarray as xr
 from pyrte_rrtmgp import rte
 
 from faxsec.arts import species_from_tag
-from faxsec.constants import AVOGADRO, GRAVITY, MEAN_MOLAR_MASS_AIR, MEAN_MOLAR_MASS_H2O
-from faxsec.gas_optics import GasOptics
+from faxsec.constants import (
+    AVOGADRO,
+    DATA_DIR,
+    GRAVITY,
+    MEAN_MOLAR_MASS_AIR,
+    MEAN_MOLAR_MASS_H2O,
+)
+from faxsec.gas_optics import GasOptics, trained_path
 from faxsec.log_config import setup_logging
 from faxsec.utils import kayser_to_hz, planck_nu, rayleigh_xsec_stamnes_2017
 
@@ -48,20 +57,23 @@ _ = rte  # keep import for accessor registration
 
 logger = logging.getLogger(__name__)
 
-ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data"
 EXAMPLE_DIR = DATA_DIR / "rte_examples"
+
+DDQ_DIR = DATA_DIR / "ddq"
+ALTERNATIVE_DDQ_DIR = DDQ_DIR / "Additional configurations"
+
+
+def ddq_path(quadrature: str, band: str) -> Path:
+    """The quadrature file for one band: the default set, or a numbered alternative."""
+    if quadrature == "default":
+        return DDQ_DIR / f"DDQ_{band}.h5"
+    return ALTERNATIVE_DDQ_DIR / f"DDQ_{band}_{quadrature}.h5"
+
 
 CASE_FILES = {
     "rfmip": EXAMPLE_DIR / "rfmip-states.nc",
     "ckdmip": EXAMPLE_DIR / "ckdmip-states.nc",
     "rce": EXAMPLE_DIR / "rce-states.nc",
-}
-
-# Dense-frequency-grid FAX datatrees, trained without a DDQ quadrature.
-HIGHRES_FILES = {
-    "LW": "gas_optics_Highres_LW_100000.nc",
-    "SW": "gas_optics_Highres_SW_100001.nc",
 }
 
 RENAME_DICT = {
@@ -184,10 +196,10 @@ def build_species_tag_map(band: str) -> dict[str, tuple[str, ...]]:
     return {species: tuple(tags) for species, tags in species_tags.items()}
 
 
-def load_ddq_aux_data(band: str) -> xr.Dataset:
+def load_ddq_aux_data(band: str, quadrature: str = "default") -> xr.Dataset:
     """DDQ frequency grid, quadrature weights, solar irradiance, Rayleigh xsec."""
     band = band.upper()
-    ddq_raw = xr.load_dataset(DATA_DIR / "ddq" / f"DDQ_{band}.h5")
+    ddq_raw = xr.load_dataset(ddq_path(quadrature, band))
 
     frequency_grid = kayser_to_hz(ddq_raw["S"].values)
     weights_hz = kayser_to_hz(ddq_raw["W"].values)
@@ -235,9 +247,11 @@ def load_ddq_aux_data(band: str) -> xr.Dataset:
     return ddq
 
 
-def build_arts_gas_optics(band: str) -> tuple[GasOptics, xr.Dataset]:
+def build_arts_gas_optics(
+    band: str, quadrature: str = "default"
+) -> tuple[GasOptics, xr.Dataset]:
     """Build a GasOptics with every absorber evaluated online via ARTS."""
-    ddq_aux = load_ddq_aux_data(band)
+    ddq_aux = load_ddq_aux_data(band, quadrature)
     species_tags = build_species_tag_map(band)
     gas_optics = GasOptics.from_arts_tags(
         species_tags, frequency_grid=ddq_aux["frequency"].values
@@ -255,7 +269,7 @@ def build_fax_gas_optics(band: str, suffix: str = "") -> tuple[GasOptics, xr.Dat
 
 def build_highres_gas_optics(band: str) -> tuple[GasOptics, xr.Dataset]:
     """Load a FAX GasOptics trained directly on the dense Highres frequency grid."""
-    gas_optics_dt = xr.open_datatree(DATA_DIR / "ff" / HIGHRES_FILES[band.upper()])
+    gas_optics_dt = xr.open_datatree(trained_path(band, "highres"))
     gas_optics = GasOptics.from_datatree(gas_optics_dt)
     return gas_optics, gas_optics_dt["Other"].to_dataset()
 
@@ -278,24 +292,29 @@ def frequency_chunk_gas_optics(gas_optics: GasOptics, freq_slice: slice) -> GasO
 
 
 def build_gas_optics(
-    backend: str, band: str, suffix: str = ""
+    backend: str, band: str, suffix: str = "", quadrature: str = "default"
 ) -> tuple[GasOptics, xr.Dataset]:
     if backend == "arts":
-        return build_arts_gas_optics(band)
+        return build_arts_gas_optics(band, quadrature)
     if backend == "fax":
         return build_fax_gas_optics(band, suffix)
     if backend == "fax-highres":
         return build_highres_gas_optics(band)
+    if backend == "arts-highres":
+        # built per frequency chunk, as ARTS absorbers cannot be sliced
+        _, aux = build_highres_gas_optics(band)
+        tags = build_species_tag_map(band)
+        return lambda grid: GasOptics.from_arts_tags(tags, frequency_grid=grid), aux
     raise ValueError(
         f"'{backend}' is not a faxsec.GasOptics backend "
-        "(use 'fax', 'fax-highres', or 'arts')"
+        "(use 'fax', 'fax-highres', 'arts' or 'arts-highres')"
     )
 
 
 def compute_fluxes(
     atm_ds: xr.Dataset,
     band: str,
-    gas_optics: GasOptics,
+    gas_optics: GasOptics | Callable[[np.ndarray], GasOptics],
     ddq_aux: xr.Dataset,
     frequency_chunk: int = 2000,
 ) -> xr.Dataset:
@@ -305,12 +324,19 @@ def compute_fluxes(
     broadband total, so the per-frequency optical properties and fluxes for
     a dense grid (e.g. the 100000-point Highres grid) never all exist in
     memory at once -- only one chunk's worth, plus the broadband total.
+
+    ``gas_optics`` may also be a function of a chunk's frequency grid.
     """
     band = band.lower()
-    atm_ds = prepare_atmosphere(atm_ds, gas_optics.species)
-    logger.info("%s: %s", band.upper(), profile_summary(atm_ds))
-
     n_freq = ddq_aux.sizes["frequency"]
+
+    def for_chunk(freq_slice: slice) -> GasOptics:
+        if callable(gas_optics):
+            return gas_optics(ddq_aux["frequency"].values[freq_slice])
+        if frequency_chunk >= n_freq:
+            return gas_optics
+        return frequency_chunk_gas_optics(gas_optics, freq_slice)
+
     gas_optics_logger = logging.getLogger("faxsec.gas_optics")
     previous_level = gas_optics_logger.level
     if n_freq > frequency_chunk:
@@ -322,11 +348,10 @@ def compute_fluxes(
     try:
         for start in range(0, n_freq, frequency_chunk):
             freq_slice = slice(start, min(start + frequency_chunk, n_freq))
-            chunk_gas_optics = (
-                gas_optics
-                if frequency_chunk >= n_freq
-                else frequency_chunk_gas_optics(gas_optics, freq_slice)
-            )
+            chunk_gas_optics = for_chunk(freq_slice)
+            if fluxes is None:
+                atm_ds = prepare_atmosphere(atm_ds, chunk_gas_optics.species)
+                logger.info("%s: %s", band.upper(), profile_summary(atm_ds))
             chunk_fluxes = _solve_band_fluxes(
                 atm_ds, band, chunk_gas_optics, ddq_aux.isel(frequency=freq_slice)
             )
@@ -468,7 +493,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--case", choices=sorted(CASE_FILES), default="rfmip")
     parser.add_argument(
-        "--gas-optics", choices=("fax", "fax-highres", "arts", "rrtmgp"), default="fax"
+        "--gas-optics",
+        choices=("fax", "fax-highres", "arts", "arts-highres", "rrtmgp"),
+        default="fax",
     )
     parser.add_argument(
         "--variant",
@@ -489,6 +516,13 @@ def parse_args() -> argparse.Namespace:
         help="Filename suffix of the trained FAX datatree (only used by --gas-optics fax)",
     )
     parser.add_argument(
+        "--ddq",
+        type=str,
+        default="default",
+        help="Quadrature set the 'arts' backend evaluates on: 'default', or the "
+        "index of one in data/ddq/Additional configurations",
+    )
+    parser.add_argument(
         "--frequency-chunk",
         type=int,
         default=2000,
@@ -496,7 +530,25 @@ def parse_args() -> argparse.Namespace:
         "broadband total (default: %(default)s). Keeps a dense grid's "
         "per-frequency fluxes from all existing in memory at once.",
     )
+    parser.add_argument(
+        "--stride",
+        type=int,
+        default=1,
+        help="Use every n-th frequency, weights scaled by n, for quick tests",
+    )
     return parser.parse_args()
+
+
+def thin_out(
+    gas_optics: GasOptics | Callable, aux: xr.Dataset, stride: int
+) -> tuple[GasOptics | Callable, xr.Dataset]:
+    """Every ``stride``-th frequency, weights scaled by ``stride``."""
+    every = slice(None, None, stride)
+    aux = aux.isel(frequency=every)
+    aux["weights_hz"] = aux["weights_hz"] * stride
+    if not callable(gas_optics):
+        gas_optics = frequency_chunk_gas_optics(gas_optics, every)
+    return gas_optics, aux
 
 
 def main() -> None:
@@ -522,8 +574,15 @@ def main() -> None:
         lw_fluxes = compute_rrtmgp_fluxes(atm_ds, "lw")
         sw_fluxes = compute_rrtmgp_fluxes(atm_ds, "sw")
     else:
-        gas_optics_lw, ddq_aux_lw = build_gas_optics(args.gas_optics, "LW", args.suffix)
-        gas_optics_sw, ddq_aux_sw = build_gas_optics(args.gas_optics, "SW", args.suffix)
+        gas_optics_lw, ddq_aux_lw = build_gas_optics(
+            args.gas_optics, "LW", args.suffix, args.ddq
+        )
+        gas_optics_sw, ddq_aux_sw = build_gas_optics(
+            args.gas_optics, "SW", args.suffix, args.ddq
+        )
+        if args.stride > 1:
+            gas_optics_lw, ddq_aux_lw = thin_out(gas_optics_lw, ddq_aux_lw, args.stride)
+            gas_optics_sw, ddq_aux_sw = thin_out(gas_optics_sw, ddq_aux_sw, args.stride)
         lw_fluxes = compute_fluxes(
             atm_ds, "lw", gas_optics_lw, ddq_aux_lw, args.frequency_chunk
         )
@@ -540,6 +599,8 @@ def main() -> None:
         output_name += f"_v{args.variant:03d}"
     if args.columns is not None:
         output_name += f"_c{args.columns.replace(':', '-')}"
+    if args.stride > 1:
+        output_name += f"_s{args.stride}"
     output_path = EXAMPLE_DIR / f"{output_name}.nc"
     fluxes.to_netcdf(output_path)
     logger.info("Saved fluxes -> %s", output_path)

@@ -4,7 +4,7 @@ MT_CKD Water Vapor Continuum
 Implemented from  from Mlawer et al., JQSRT 2023 and Fortran90 code that contains the following statement:
 
 !  --------------------------------------------------------------------------
-! |  Copyright ©, Atmospheric and Environmental Research, Inc., 2022         |
+! |  Copyright (c), Atmospheric and Environmental Research, Inc., 2022       |
 ! |                                                                          |
 ! |  All rights reserved. This source code was developed as part of the      |
 ! |  LBLRTM software and is designed for scientific and research purposes.   |
