@@ -449,9 +449,17 @@ class RationalForm(FunctionalForm):
         return num / den  # (N, F)
 
     def is_pole_free(self, coeffs: np.ndarray, x: np.ndarray) -> np.ndarray:
-        """Per frequency, whether the denominator stays above the floor over ``x``."""
-        den = self._vandermonde_den(x) @ coeffs[self._n_a :] + 1.0
-        return den.min(axis=0) >= self.FitConfig.den_floor
+        """Per frequency, whether the denominator stays above the floor over the
+        range of ``x``, from its exact minimum there."""
+        poly = np.polynomial.polynomial
+        lo, hi = float(np.min(x)), float(np.max(x))
+        minima = np.empty(coeffs.shape[1])
+        for fi, b in enumerate(coeffs[self._n_a :].T):
+            den = np.concatenate([[1.0], b])
+            stationary = poly.polyroots(poly.polyder(den))
+            inside = stationary[(stationary.imag == 0) & (stationary.real > lo) & (stationary.real < hi)].real
+            minima[fi] = poly.polyval(np.concatenate([[lo, hi], inside]), den).min()
+        return minima >= self.FitConfig.den_floor
 
     @dataclass
     class FitConfig:

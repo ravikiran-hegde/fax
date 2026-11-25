@@ -11,6 +11,7 @@ import pytest
 import xarray as xr
 
 from faxsec.constants import REFERENCE_VMR
+from faxsec.forms import RationalForm
 from faxsec.functional import FunctionalAbsorber
 from faxsec.gas_optics import GasOptics
 from faxsec.utils import atmospheric_t_range, hz_to_kayser
@@ -69,15 +70,15 @@ def test_cross_sections_stay_physical(band):
 
 @pytest.mark.parametrize("band", BANDS)
 def test_temperature_form_has_no_pole(band):
-    """The rational denominator must not approach zero anywhere it is evaluated."""
+    """The rational denominator stays above its floor over the fitted range."""
     tree = open_datatree(band)
     ds = tree[line_group(tree)].to_dataset()
     for species in ds["species"].values:
         one = ds.sel(species=species)
-        x = np.linspace(*one["x_t_range"].values, 400)
-        coeffs = one["temperature_coeffs"].values
-        denominator = 1.0 + np.outer(x, coeffs[3]) + np.outer(x**2, coeffs[4])
-        assert denominator.min() > 0.0, f"{band} {species}"
+        ok = RationalForm().is_pole_free(
+            one["temperature_coeffs"].values, one["x_t_range"].values
+        )
+        assert ok.all(), f"{band} {species}: {int((~ok).sum())} frequencies"
 
 
 @pytest.mark.parametrize("band", BANDS)
