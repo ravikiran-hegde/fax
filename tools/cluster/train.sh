@@ -22,4 +22,6 @@ conda activate "${CONDA_ENV:?set CONDA_ENV to the environment with faxsec instal
 cd "$SLURM_SUBMIT_DIR"
 echo "training $BAND on $(hostname) with $SLURM_CPUS_PER_TASK cores"
 
-python examples/train_fgrid.py --bands "$BAND" --workers "$SLURM_CPUS_PER_TASK" "$@"
+# 800 frequencies per chunk gives every core a chunk on the 1e5-point grid
+python examples/train_fgrid.py --bands "$BAND" --workers "$SLURM_CPUS_PER_TASK" \
+    --frequency-chunk 800 "$@"

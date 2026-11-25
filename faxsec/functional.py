@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from multiprocessing import get_context
 from pathlib import Path
@@ -386,7 +388,7 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
         )
 
         config = asdict(self.config)
-        with ProcessPoolExecutor(
+        with _single_threaded_workers(), ProcessPoolExecutor(
             max_workers=n_workers, mp_context=get_context("spawn")
         ) as pool:
             futures = [
@@ -568,6 +570,24 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
             )
 
         return source
+
+
+THREAD_VARIABLES = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS")
+
+
+@contextmanager
+def _single_threaded_workers():
+    """One BLAS thread for each process started inside."""
+    saved = {name: os.environ.get(name) for name in THREAD_VARIABLES}
+    os.environ.update(dict.fromkeys(THREAD_VARIABLES, "1"))
+    try:
+        yield
+    finally:
+        for name, value in saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
 
 def _train_frequency_chunk(
