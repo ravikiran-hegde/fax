@@ -51,6 +51,10 @@ class FunctionalForm(ABC):
             np.where(coeffs >= 0, np.inf, 0.0),
         )
 
+    def is_pole_free(self, coeffs: np.ndarray, x: np.ndarray) -> np.ndarray:
+        """Per frequency, whether the form stays finite over ``x``."""
+        return np.ones(coeffs.shape[1], dtype=bool)
+
 
 def anchored_lstsq(
     X: np.ndarray, t: np.ndarray, w: np.ndarray, ref_row: np.ndarray
@@ -416,7 +420,7 @@ class RationalForm(FunctionalForm):
         return np.polynomial.polynomial.polyvander(np.ravel(x), self.numerator_order)
 
     def _vandermonde_den(self, x: np.ndarray) -> np.ndarray:
-        """(N, n_b)  — excludes leading 1"""
+        """(N, n_b)  - excludes leading 1"""
         return np.polynomial.polynomial.polyvander(np.ravel(x), self.denominator_order)[
             :, 1:
         ]
@@ -428,7 +432,7 @@ class RationalForm(FunctionalForm):
         Parameters
         ----------
         x      : (N,)
-        coeffs : (n_params, F)  — rows: [a0..an, b1..bm]
+        coeffs : (n_params, F)  - rows: [a0..an, b1..bm]
 
         Returns
         -------
@@ -443,6 +447,11 @@ class RationalForm(FunctionalForm):
         # den = np.where(np.abs(den) < 1e-12, np.copysign(1e-12, den), den)
 
         return num / den  # (N, F)
+
+    def is_pole_free(self, coeffs: np.ndarray, x: np.ndarray) -> np.ndarray:
+        """Per frequency, whether the denominator stays above the floor over ``x``."""
+        den = self._vandermonde_den(x) @ coeffs[self._n_a :] + 1.0
+        return den.min(axis=0) >= self.FitConfig.den_floor
 
     @dataclass
     class FitConfig:
@@ -487,7 +496,6 @@ class RationalForm(FunctionalForm):
         # the coefficients share a scale; they are divided back out at the end.
         Vn = self._vandermonde_num(x / x_absmax)
         Vd = self._vandermonde_den(x / x_absmax)
-        Vd_check = self._vandermonde_den(x_check / x_absmax)
 
         b_scale = np.ones(self._n_b)
         floor = self.fit_config.den_floor
@@ -559,7 +567,8 @@ class RationalForm(FunctionalForm):
                 max_nfev=int(self.fit_config.max_nfev),
             )
 
-            if _den(_expand(result.x)[1], Vd_check).min() < floor:
+            scaled = np.concatenate(_expand(result.x))[:, None]
+            if not self.is_pole_free(scaled, x_check / x_absmax)[0]:
                 n_free_a = n_params - self._n_b
                 lo = np.concatenate([np.full(n_free_a, -np.inf), -b_bound])
                 hi = np.concatenate([np.full(n_free_a, np.inf), b_bound])

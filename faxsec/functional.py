@@ -708,8 +708,8 @@ class NoLogFunctionalAbsorber(FunctionalAbsorber):
     def _refine_jointly(self, target, weights, x_p, x_t, i_ref) -> None:
         """Fit both factors together per frequency, starting from the ALS result.
 
-        A refinement that drives either factor through zero anywhere in range
-        is discarded.
+        A refinement that drives either factor through zero, or puts a pole in
+        either, anywhere in range is discarded.
         """
         from scipy.optimize import least_squares
 
@@ -761,6 +761,11 @@ class NoLogFunctionalAbsorber(FunctionalAbsorber):
             p_range = self.pressure_form.evaluate(p_grid, result.x[:n_p, None])
             t_range = self.temperature_form.evaluate(t_grid, result.x[n_p:, None])
             if p_range.min() <= 0 or t_range.min() <= 0:
+                continue
+            if not (
+                self.pressure_form.is_pole_free(result.x[:n_p, None], p_grid)[0]
+                and self.temperature_form.is_pole_free(result.x[n_p:, None], t_grid)[0]
+            ):
                 continue
             n_kept += 1
             self.coeffs.pressure_coeffs[:, fi] = result.x[:n_p]
