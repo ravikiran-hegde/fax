@@ -26,6 +26,14 @@ from .constants import KAYSER_TO_HZ
 logger = logging.getLogger(__name__)
 
 
+def relative_to_data(path: str | Path) -> str:
+    """``path`` relative to the data directory when it lies inside it."""
+    path = Path(path).resolve()
+    if path.is_relative_to(DATA_DIR.resolve()):
+        return str(path.relative_to(DATA_DIR.resolve()))
+    return str(path)
+
+
 def kayser_to_hz(kaysers):
     """Convert wavenumbers in kaysers (cm^-1) to frequencies in Hz."""
     return kaysers * KAYSER_TO_HZ

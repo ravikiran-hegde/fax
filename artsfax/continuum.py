@@ -31,6 +31,7 @@ import numpy as np
 import xarray as xr
 
 from artsfax.constants import CM_TO_M, DATA_DIR
+from artsfax.utils import relative_to_data
 
 from .abstract_class import (
     ARRAYLIKE,
@@ -168,7 +169,7 @@ class ContinuumAbsorber(SingleSpeciesModel, SavableModel):
         species_name = self.config.species
         continuum_ds.attrs["continuum_type"] = self.config.continuum_type
         continuum_ds.attrs["model"] = self.config.model
-        continuum_ds.attrs["data_source"] = str(self.config.data_source)
+        continuum_ds.attrs["data_source"] = relative_to_data(self.config.data_source)
         continuum_ds.attrs["model_class"] = self.class_name
 
         continuum_ds = continuum_ds.expand_dims("species").assign_coords(
@@ -185,7 +186,7 @@ class ContinuumAbsorber(SingleSpeciesModel, SavableModel):
     def save_data(self, path: str | Path) -> None:
         """Save the model to disk."""
         self._data.attrs.update(vars(self.config))
-        self._data.attrs["data_source"] = str(self.config.data_source)
+        self._data.attrs["data_source"] = relative_to_data(self.config.data_source)
         self._data.to_netcdf(path)
 
     def load_data(self, path: str | Path) -> None:

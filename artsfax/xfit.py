@@ -17,6 +17,7 @@ from artsfax.abstract_class import (
     SingleSpeciesModel,
 )
 from artsfax.constants import DATA_DIR
+from artsfax.utils import relative_to_data
 
 DEFAULT_HALOCARBON_DATA = DATA_DIR / "halocarbon" / "CFC11-XFIT.xml"
 
@@ -175,7 +176,7 @@ class CrossFitAbsorber(SingleSpeciesModel, SavableModel):
                 "species": species,
             },
             attrs={
-                "source": str(xml_path),
+                "source": relative_to_data(xml_path),
                 "format": "ARTS XFIT",
             },
         )
@@ -191,7 +192,7 @@ class CrossFitAbsorber(SingleSpeciesModel, SavableModel):
         data = data.expand_dims("species")
         data = data.drop_vars("band_id", errors="ignore")
         data.attrs["model"] = self.config.model
-        data.attrs["data_source"] = str(self.config.data_source)
+        data.attrs["data_source"] = relative_to_data(self.config.data_source)
         data.attrs["model_class"] = self.class_name
 
         # Interpolate the coeffs to the frequency grid
@@ -219,7 +220,7 @@ class CrossFitAbsorber(SingleSpeciesModel, SavableModel):
     def save_data(self, path: str | Path) -> None:
         """Save the model to disk."""
         self._data.attrs.update(vars(self.config))
-        self._data.attrs["data_source"] = str(self.config.data_source)
+        self._data.attrs["data_source"] = relative_to_data(self.config.data_source)
         self._data.to_netcdf(path)
 
     def load_data(self, path: str | Path) -> None:

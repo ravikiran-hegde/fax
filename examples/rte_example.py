@@ -51,7 +51,12 @@ from artsfax.constants import (
 )
 from artsfax.gas_optics import GasOptics, trained_path
 from artsfax.log_config import setup_logging
-from artsfax.utils import kayser_to_hz, planck_nu, rayleigh_xsec_stamnes_2017
+from artsfax.utils import (
+    kayser_to_hz,
+    planck_nu,
+    rayleigh_xsec_stamnes_2017,
+    relative_to_data,
+)
 
 _ = rte  # keep import for accessor registration
 
@@ -238,7 +243,7 @@ def load_ddq_aux_data(band: str, quadrature: str = "default") -> xr.Dataset:
             * solar_source["spectral_solar_radiance"]
             / np.dot(solar_source["spectral_solar_radiance"].values, weights_hz)
         )
-        ddq["spectral_solar_irradiance"].attrs["source"] = str(solar_source_file)
+        ddq["spectral_solar_irradiance"].attrs["source"] = relative_to_data(solar_source_file)
 
         ddq_rayleigh = rayleigh_xsec_stamnes_2017(frequency_grid)
         ddq["xsec_rayleigh"] = ("frequency", ddq_rayleigh)

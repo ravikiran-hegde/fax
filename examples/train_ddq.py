@@ -22,6 +22,7 @@ from artsfax.utils import (
     kayser_to_hz,
     rayleigh_xsec_stamnes_2017,
     reference_cache_path,
+    relative_to_data,
     xsec_relevance_floor,
 )
 
@@ -365,7 +366,7 @@ for band in args.bands.split(","):
             * solar_source["spectral_solar_radiance"]
             / np.dot(solar_source["spectral_solar_radiance"].values, weights_hz)
         )
-        ddq["spectral_solar_irradiance"].attrs["source"] = str(solar_source_file)
+        ddq["spectral_solar_irradiance"].attrs["source"] = relative_to_data(solar_source_file)
 
         # rayleigh scattering cross-section
         ddq_rayleigh = rayleigh_xsec_stamnes_2017(frequency_grid)
