@@ -4,13 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
-from artsfax.constants import (
-    REF_PRESSURE,
-    REF_TEMPERATURE,
-    REF_VMR,
-    REFERENCE_VMR,
-    SELF_SCALING,
-)
+from artsfax.constants import REF_VMR, REFERENCE_VMR, SELF_SCALING
 from artsfax.functional import FunctionalAbsorber, NoLogFunctionalAbsorber
 from artsfax.utils import (
     DEFAULT_REFERENCE_MEMORY_BUDGET,
@@ -21,36 +15,6 @@ from artsfax.utils import (
 
 # Named training configurations; a band may override any entry.
 TRAINING_CONFIGS = {
-    "legacy": {
-        "ref_pressure": REF_PRESSURE,
-        "ref_temperature": REF_TEMPERATURE,
-        "temperature_variable": "dT",
-        "formulation": "log",
-        "pressure_form": "Hinge",
-        "temperature_form": "Rational",
-        "max_iter": 10,
-        "sampling": {"method": "natural", "p_range": [0.01, 110000], "N_samples": 1000},
-    },
-    "atmospheric": {
-        "ref_pressure": 1.0e4,
-        "ref_temperature": 240.0,
-        "temperature_variable": "dT",
-        "formulation": "log",
-        "pressure_form": "Hinge",
-        "temperature_form": "Rational",
-        "max_iter": 10,
-        "sampling": {
-            "method": "atmospheric",
-            "p_range": [0.01, 1.1e5],
-            "N_samples": 2000,
-            "pressure_weight": 0.5,
-        },
-        # SW: equal air mass per stratum; LW: weighted towards the stratosphere
-        "bands": {
-            "LW": {"sampling": {"pressure_weight": 0.5}},
-            "SW": {"sampling": {"pressure_weight": 1.0}},
-        },
-    },
     "atmospheric_nolog": {
         "ref_pressure": 1.0e4,
         "ref_temperature": 240.0,
@@ -65,6 +29,7 @@ TRAINING_CONFIGS = {
             "N_samples": 2000,
             "pressure_weight": 0.5,
         },
+        # SW: equal air mass per stratum; LW: weighted towards the stratosphere
         "bands": {
             "LW": {"sampling": {"pressure_weight": 0.5}},
             "SW": {"sampling": {"pressure_weight": 1.0}},
