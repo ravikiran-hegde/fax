@@ -550,7 +550,9 @@ class FunctionalAbsorber(SingleSpeciesModel, SavableModel):
         freq_grid = self.config.frequency_grid
         if freq_grid is not None:
             ds_freq = source.coords["frequency"].values
-            if not np.allclose(ds_freq, freq_grid, atol=freq_atol):
+            if ds_freq.shape != np.shape(freq_grid) or not np.allclose(
+                ds_freq, freq_grid, atol=freq_atol
+            ):
                 raise ValueError("Frequency grid does not match expected grid")
 
         # check if ref_pressure and ref_temperature are in the dataset
