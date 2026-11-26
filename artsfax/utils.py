@@ -10,7 +10,7 @@ import numpy as np
 import xarray as xr
 from numpy.typing import ArrayLike
 
-from faxsec.constants import (
+from artsfax.constants import (
     BOLTZMANN,
     DATA_DIR,
     DEFAULT_VMR,
@@ -83,7 +83,7 @@ def rad_fun(nu, T):
 
 def rayleigh_xsec_stamnes_2017(frequency_hz: np.ndarray) -> np.ndarray:
     # TODO: implement as a absorber?
-    from faxsec.constants import LIGHT_SPEED
+    from artsfax.constants import LIGHT_SPEED
 
     # Convert frequency to wavelength in microns
     wavelength = LIGHT_SPEED / frequency_hz * 1e6  # microns

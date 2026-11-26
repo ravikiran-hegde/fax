@@ -4,15 +4,15 @@ Example SLURM scripts for large jobs: training the
 dense-grid FAX model, and line-by-line fluxes on that grid.
 
 Submit from the repository root. The scripts need two variables to activate the
-Python environment that has faxsec installed, and a `logs/` folder:
+Python environment that has artsfax installed, and a `logs/` folder:
 
 ```bash
 export CONDA_SH=/path/to/conda/etc/profile.d/conda.sh
-export CONDA_ENV=<env with faxsec, pyarts3 and pyrte_rrtmgp>
+export CONDA_ENV=<env with artsfax, pyarts3 and pyrte_rrtmgp>
 mkdir -p logs
 ```
 
-`FAXSEC_DATA` sets a different data directory.
+`ARTSFAX_DATA` sets a different data directory.
 
 ## Training
 

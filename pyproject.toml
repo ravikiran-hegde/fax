@@ -1,5 +1,5 @@
 [project]
-name = "faxsec"
+name = "artsfax"
 version = "0.2.0"
 description = "Functional forms for gas absorption cross-sections (FAX), trained against ARTS line-by-line"
 readme = "README.md"
@@ -34,7 +34,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["faxsec*"]
+include = ["artsfax*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

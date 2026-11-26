@@ -41,17 +41,17 @@ import numpy as np
 import xarray as xr
 from pyrte_rrtmgp import rte
 
-from faxsec.arts import species_from_tag
-from faxsec.constants import (
+from artsfax.arts import species_from_tag
+from artsfax.constants import (
     AVOGADRO,
     DATA_DIR,
     GRAVITY,
     MEAN_MOLAR_MASS_AIR,
     MEAN_MOLAR_MASS_H2O,
 )
-from faxsec.gas_optics import GasOptics, trained_path
-from faxsec.log_config import setup_logging
-from faxsec.utils import kayser_to_hz, planck_nu, rayleigh_xsec_stamnes_2017
+from artsfax.gas_optics import GasOptics, trained_path
+from artsfax.log_config import setup_logging
+from artsfax.utils import kayser_to_hz, planck_nu, rayleigh_xsec_stamnes_2017
 
 _ = rte  # keep import for accessor registration
 
@@ -117,7 +117,7 @@ CONTINUUM_TAGS = ("H2O-ForeignContCKDMT430", "H2O-SelfContCKDMT430")
 
 
 def prepare_atmosphere(atm_ds: xr.Dataset, species: tuple[str, ...]) -> xr.Dataset:
-    """Rename to faxsec conventions and add the dry-air column density."""
+    """Rename to artsfax conventions and add the dry-air column density."""
     atm_ds = atm_ds.rename({k: v for k, v in RENAME_DICT.items() if k in atm_ds})
 
     species_rename = {sp.lower(): sp for sp in species if sp.lower() in atm_ds}
@@ -167,7 +167,7 @@ def profile_summary(atm_ds: xr.Dataset) -> str:
 
 # -----------------------------------------------------------------------------
 # Gas-optics backends: "fax" (trained) and "arts" (online) both produce a
-# faxsec GasOptics, so they share the same downstream flux computation.
+# artsfax GasOptics, so they share the same downstream flux computation.
 # -----------------------------------------------------------------------------
 
 
@@ -278,7 +278,7 @@ def frequency_chunk_gas_optics(gas_optics: GasOptics, freq_slice: slice) -> GasO
     """A GasOptics restricted to a slice of the frequency grid.
 
     Every absorber round-trips through to_dataset/from_dataset, which for
-    all faxsec absorber classes keeps species scalar and frequency indexed,
+    all artsfax absorber classes keeps species scalar and frequency indexed,
     so slicing frequency there and rebuilding gives back a valid absorber
     for just that chunk.
     """
@@ -306,7 +306,7 @@ def build_gas_optics(
         tags = build_species_tag_map(band)
         return lambda grid: GasOptics.from_arts_tags(tags, frequency_grid=grid), aux
     raise ValueError(
-        f"'{backend}' is not a faxsec.GasOptics backend "
+        f"'{backend}' is not an artsfax.GasOptics backend "
         "(use 'fax', 'fax-highres', 'arts' or 'arts-highres')"
     )
 
@@ -318,7 +318,7 @@ def compute_fluxes(
     ddq_aux: xr.Dataset,
     frequency_chunk: int = 2000,
 ) -> xr.Dataset:
-    """Broadband LW or SW fluxes from a faxsec GasOptics (shared by the fax/arts backends).
+    """Broadband LW or SW fluxes from an artsfax GasOptics (shared by the fax/arts backends).
 
     Solved in chunks along frequency and immediately summed to a running
     broadband total, so the per-frequency optical properties and fluxes for
@@ -337,7 +337,7 @@ def compute_fluxes(
             return gas_optics
         return frequency_chunk_gas_optics(gas_optics, freq_slice)
 
-    gas_optics_logger = logging.getLogger("faxsec.gas_optics")
+    gas_optics_logger = logging.getLogger("artsfax.gas_optics")
     previous_level = gas_optics_logger.level
     if n_freq > frequency_chunk:
         # rebuilding a chunk's GasOptics every iteration would otherwise log

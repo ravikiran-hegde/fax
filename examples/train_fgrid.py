@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
-from faxsec.constants import (
+from artsfax.constants import (
     DATA_DIR,
     REF_PRESSURE,
     REF_TEMPERATURE,
@@ -14,10 +14,10 @@ from faxsec.constants import (
     REFERENCE_VMR,
     SELF_SCALING,
 )
-from faxsec.functional import FunctionalAbsorber, NoLogFunctionalAbsorber
-from faxsec.gas_optics import GasOptics, write_datatree
-from faxsec.log_config import setup_logging
-from faxsec.utils import (
+from artsfax.functional import FunctionalAbsorber, NoLogFunctionalAbsorber
+from artsfax.gas_optics import GasOptics, write_datatree
+from artsfax.log_config import setup_logging
+from artsfax.utils import (
     DEFAULT_REFERENCE_MEMORY_BUDGET,
     ensure_reference_dataset,
     kayser_to_hz,
@@ -299,7 +299,7 @@ def main() -> None:
     args = parse_args()
     if args.reference_memory <= 0:
         raise SystemExit("--reference-memory must be positive")
-    reference_memory_budget = int(args.reference_memory * 1e9)  # bytes, as faxsec wants
+    reference_memory_budget = int(args.reference_memory * 1e9)  # bytes, as artsfax wants
     suffix = args.suffix
     base_config = TRAINING_CONFIGS[args.config]
     reference_suffix = args.reference_suffix
@@ -356,7 +356,7 @@ def main() -> None:
             absorbers[sp] = func_abs
 
         # halocarbons
-        from faxsec.xfit import CrossFitAbsorber
+        from artsfax.xfit import CrossFitAbsorber
 
         for sp in halocarbons[band].keys():
             func_abs = CrossFitAbsorber(
@@ -367,7 +367,7 @@ def main() -> None:
             absorbers[sp] = func_abs
 
         # continuum
-        from faxsec.continuum import H2OContinuum
+        from artsfax.continuum import H2OContinuum
 
         for sp in continuum.keys():
             absorbers[f"{sp}_continuum"] = H2OContinuum(frequency_grid=frequency_grid)

@@ -7,15 +7,15 @@ import numpy as np
 import pytest
 import xarray as xr
 
-import faxsec
-from faxsec import (
+import artsfax
+from artsfax import (
     FunctionalAbsorber,
     GasOptics,
     H2OContinuum,
     NoLogFunctionalAbsorber,
     load_gas_optics,
 )
-from faxsec.gas_optics import write_datatree
+from artsfax.gas_optics import write_datatree
 
 REF_P, REF_T = 1.0e4, 240.0
 
@@ -146,8 +146,8 @@ def test_save_and_reload_is_exact(gas_optics, tmp_path):
 def test_shipped_model_loads_without_arts():
     code = (
         "import sys; sys.modules['pyarts3'] = None\n"
-        "import faxsec\n"
-        "print(len(faxsec.load_gas_optics('SW').absorbers))\n"
+        "import artsfax\n"
+        "print(len(artsfax.load_gas_optics('SW').absorbers))\n"
     )
     result = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True, check=True
@@ -156,5 +156,5 @@ def test_shipped_model_loads_without_arts():
 
 
 def test_public_names_are_exported():
-    for name in faxsec.__all__:
-        assert hasattr(faxsec, name), name
+    for name in artsfax.__all__:
+        assert hasattr(artsfax, name), name

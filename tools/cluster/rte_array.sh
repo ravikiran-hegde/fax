@@ -34,9 +34,9 @@ VARIANT=${VARIANTS[$(( SLURM_ARRAY_TASK_ID / N_BLOCKS ))]}
 FIRST=$(( (SLURM_ARRAY_TASK_ID % N_BLOCKS) * WORKERS ))
 
 source "${CONDA_SH:?set CONDA_SH to the conda.sh that activates your environment}"
-conda activate "${CONDA_ENV:?set CONDA_ENV to the environment with faxsec installed}"
+conda activate "${CONDA_ENV:?set CONDA_ENV to the environment with artsfax installed}"
 cd "$SLURM_SUBMIT_DIR"
-OUT_DIR=$(python -c "from faxsec.constants import DATA_DIR; print(DATA_DIR / 'rte_examples')")
+OUT_DIR=$(python -c "from artsfax.constants import DATA_DIR; print(DATA_DIR / 'rte_examples')")
 echo "$BACKEND $CASE variant $VARIANT, columns from $FIRST, $WORKERS x $THREADS threads on $(hostname)"
 
 STRIDE_TAG=""

@@ -18,7 +18,7 @@ BAND=${1:?usage: sbatch tools/cluster/train.sh LW|SW [train_fgrid.py options]}
 shift
 
 source "${CONDA_SH:?set CONDA_SH to the conda.sh that activates your environment}"
-conda activate "${CONDA_ENV:?set CONDA_ENV to the environment with faxsec installed}"
+conda activate "${CONDA_ENV:?set CONDA_ENV to the environment with artsfax installed}"
 cd "$SLURM_SUBMIT_DIR"
 echo "training $BAND on $(hostname) with $SLURM_CPUS_PER_TASK cores"
 

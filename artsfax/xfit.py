@@ -10,13 +10,13 @@ from typing import Optional
 import numpy as np
 import xarray as xr
 
-from faxsec.abstract_class import (
+from artsfax.abstract_class import (
     ARRAYLIKE,
     AbsorberConfig,
     SavableModel,
     SingleSpeciesModel,
 )
-from faxsec.constants import DATA_DIR
+from artsfax.constants import DATA_DIR
 
 DEFAULT_HALOCARBON_DATA = DATA_DIR / "halocarbon" / "CFC11-XFIT.xml"
 

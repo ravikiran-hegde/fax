@@ -3,7 +3,7 @@
 import numpy as np
 import xarray as xr
 
-from faxsec.utils import (
+from artsfax.utils import (
     _ARTS_BYTES_PER_CASE_FREQ,
     DEFAULT_REFERENCE_MEMORY_BUDGET,
     _reference_dataset,
@@ -30,9 +30,9 @@ class StubAbsorber:
 
 def stub_arts(monkeypatch):
     """Route the reference chunks through StubAbsorber instead of ARTS."""
-    import faxsec.arts
+    import artsfax.arts
 
-    monkeypatch.setattr(faxsec.arts, "ARTSAbsorber", StubAbsorber)
+    monkeypatch.setattr(artsfax.arts, "ARTSAbsorber", StubAbsorber)
 
 
 def test_case_chunk_fits_the_memory_budget():
@@ -118,7 +118,7 @@ def test_a_failed_write_leaves_no_cache(tmp_path, monkeypatch):
 def test_a_chunked_atmosphere_is_computed_chunk_by_chunk():
     """`dask="parallelized"` only chunks if the caller chunks the atmosphere,
     and it needs the size of the frequency dim it creates."""
-    from faxsec.abstract_class import NullAbsorberModel
+    from artsfax.abstract_class import NullAbsorberModel
 
     calls = []
 
@@ -153,7 +153,7 @@ def test_a_chunked_atmosphere_is_computed_chunk_by_chunk():
 
 def test_frequency_chunks_train_to_the_same_fit(tmp_path):
     """Chunked training must reproduce whole-grid training exactly."""
-    from faxsec.functional import FunctionalAbsorber
+    from artsfax.functional import FunctionalAbsorber
 
     n_case, n_freq = 60, 8
     rng = np.random.default_rng(0)

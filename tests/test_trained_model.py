@@ -10,11 +10,11 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from faxsec.constants import REFERENCE_VMR
-from faxsec.forms import RationalForm
-from faxsec.functional import FunctionalAbsorber
-from faxsec.gas_optics import GasOptics
-from faxsec.utils import atmospheric_t_range, hz_to_kayser
+from artsfax.constants import REFERENCE_VMR
+from artsfax.forms import RationalForm
+from artsfax.functional import FunctionalAbsorber
+from artsfax.gas_optics import GasOptics
+from artsfax.utils import atmospheric_t_range, hz_to_kayser
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 BANDS = ("LW", "SW")

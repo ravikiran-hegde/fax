@@ -27,9 +27,9 @@ tests.
 import numpy as np
 import xarray as xr
 
-import faxsec
+import artsfax
 
-gas_optics = faxsec.load_gas_optics("LW")  # or "SW"
+gas_optics = artsfax.load_gas_optics("LW")  # or "SW"
 
 h2o = gas_optics.absorbers["H2O_ShiftedReciprocalLaurent_Rational"]
 xsec = h2o.cross_section(

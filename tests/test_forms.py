@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from faxsec.forms import HingeForm, PolynomialForm, RationalForm, functional_form_registry
+from artsfax.forms import HingeForm, PolynomialForm, RationalForm, functional_form_registry
 
 
 def test_registry_forms_roundtrip_shapes():

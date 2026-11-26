@@ -17,8 +17,8 @@ try:
 except ImportError:  # optional: only ARTSAbsorber needs it
     pyarts = None
 
-from faxsec.abstract_class import ARRAYLIKE, AbsorberConfig, SingleSpeciesModel
-from faxsec.constants import DEFAULT_VMR, EPS, REF_VMR
+from artsfax.abstract_class import ARRAYLIKE, AbsorberConfig, SingleSpeciesModel
+from artsfax.constants import DEFAULT_VMR, EPS, REF_VMR
 
 logger = logging.getLogger(__name__)
 

@@ -30,7 +30,7 @@ from typing import Optional
 import numpy as np
 import xarray as xr
 
-from faxsec.constants import CM_TO_M, DATA_DIR
+from artsfax.constants import CM_TO_M, DATA_DIR
 
 from .abstract_class import (
     ARRAYLIKE,

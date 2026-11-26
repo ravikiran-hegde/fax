@@ -28,12 +28,12 @@ def setup_logging(level: int | str = logging.INFO) -> None:
 
     Idempotent: only the first call installs a handler; later calls just
     adjust the level. Level can be overridden globally via the
-    ``FAXSEC_LOG_LEVEL`` environment variable (e.g. ``DEBUG`` for verbose
+    ``ARTSFAX_LOG_LEVEL`` environment variable (e.g. ``DEBUG`` for verbose
     per-iteration fit progress).
     """
     global _CONFIGURED
 
-    level = os.environ.get("FAXSEC_LOG_LEVEL", level)
+    level = os.environ.get("ARTSFAX_LOG_LEVEL", level)
     if isinstance(level, str):
         level = logging.getLevelName(level.upper())
 

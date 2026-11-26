@@ -6,12 +6,12 @@ from typing import Dict, Tuple, Type
 import numpy as np
 import xarray as xr
 
-from faxsec.abstract_class import ARRAYLIKE, SavableModel, SingleSpeciesModel
-from faxsec.arts import ARTSAbsorber
-from faxsec.constants import BOLTZMANN, DATA_DIR
-from faxsec.continuum import H2OContinuum
-from faxsec.functional import FunctionalAbsorber, NoLogFunctionalAbsorber
-from faxsec.xfit import CrossFitAbsorber
+from artsfax.abstract_class import ARRAYLIKE, SavableModel, SingleSpeciesModel
+from artsfax.arts import ARTSAbsorber
+from artsfax.constants import BOLTZMANN, DATA_DIR
+from artsfax.continuum import H2OContinuum
+from artsfax.functional import FunctionalAbsorber, NoLogFunctionalAbsorber
+from artsfax.xfit import CrossFitAbsorber
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ def trained_path(band: str = "LW", grid: str = "ddq") -> Path:
     path = DATA_DIR / "ff" / TRAINED_FILES[grid.lower(), band.upper()]
     if not path.exists():
         raise FileNotFoundError(
-            f"{path} not found (data directory {DATA_DIR}, set by FAXSEC_DATA)"
+            f"{path} not found (data directory {DATA_DIR}, set by ARTSFAX_DATA)"
         )
     return path
 
@@ -105,7 +105,7 @@ class GasOptics:
                 continue
             if absorber_cls is None:
                 logger.warning(
-                    "Unsupported faxsec class %r in datatree, skipping.", class_name
+                    "Unsupported artsfax class %r in datatree, skipping.", class_name
                 )
             else:
                 ds = dt[class_name].to_dataset().load()
@@ -210,7 +210,7 @@ class GasOptics:
             model_args = model_args[0].split("_") if model_args else ()
 
         if model_type in ("ARTS", "A"):
-            from faxsec.arts import ARTSAbsorber
+            from artsfax.arts import ARTSAbsorber
 
             return ARTSAbsorber(
                 species=species_name,
@@ -220,7 +220,7 @@ class GasOptics:
 
         elif model_type in ("Functional", "F"):
 
-            from faxsec.functional import FunctionalAbsorber
+            from artsfax.functional import FunctionalAbsorber
 
             pressure_form_name, temperature_form_name, self_scaling = model_args
             return FunctionalAbsorber(
@@ -231,7 +231,7 @@ class GasOptics:
                 self_scaling=float(self_scaling),
             )
         elif model_type in ("Continuum", "C"):
-            from faxsec.continuum import ContinuumAbsorber
+            from artsfax.continuum import ContinuumAbsorber
 
             continuum_type = model_args
             return ContinuumAbsorber(

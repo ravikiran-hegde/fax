@@ -12,14 +12,14 @@ from typing import Optional
 import numpy as np
 import xarray as xr
 
-from faxsec.abstract_class import (
+from artsfax.abstract_class import (
     ARRAYLIKE,
     AbsorberConfig,
     SavableModel,
     SingleSpeciesModel,
 )
-from faxsec.constants import REF_PRESSURE, REF_TEMPERATURE, REF_VMR
-from faxsec.forms import FunctionalForm, functional_form_registry
+from artsfax.constants import REF_PRESSURE, REF_TEMPERATURE, REF_VMR
+from artsfax.forms import FunctionalForm, functional_form_registry
 
 logger = logging.getLogger(__name__)
 

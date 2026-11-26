@@ -8,7 +8,7 @@ import sys
 
 import xarray as xr
 
-from faxsec.constants import DATA_DIR
+from artsfax.constants import DATA_DIR
 
 
 def main(backend: str, case: str) -> None:

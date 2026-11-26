@@ -4,8 +4,8 @@ import os
 from pathlib import Path
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
-# the repository's data/, unless FAXSEC_DATA is set
-DATA_DIR = Path(os.environ.get("FAXSEC_DATA", PACKAGE_ROOT.parent / "data"))
+# the repository's data/, unless ARTSFAX_DATA is set
+DATA_DIR = Path(os.environ.get("ARTSFAX_DATA", PACKAGE_ROOT.parent / "data"))
 
 BOLTZMANN = 1.380649e-23
 LIGHT_SPEED = 2.99792458e8

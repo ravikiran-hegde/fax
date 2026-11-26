@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
-from faxsec.constants import (
+from artsfax.constants import (
     DATA_DIR,
     REF_PRESSURE,
     REF_TEMPERATURE,
@@ -14,10 +14,10 @@ from faxsec.constants import (
     REFERENCE_VMR,
     SELF_SCALING,
 )
-from faxsec.functional import FunctionalAbsorber, NoLogFunctionalAbsorber
-from faxsec.gas_optics import GasOptics, write_datatree
-from faxsec.log_config import setup_logging
-from faxsec.utils import (
+from artsfax.functional import FunctionalAbsorber, NoLogFunctionalAbsorber
+from artsfax.gas_optics import GasOptics, write_datatree
+from artsfax.log_config import setup_logging
+from artsfax.utils import (
     ensure_reference_dataset,
     kayser_to_hz,
     rayleigh_xsec_stamnes_2017,
@@ -320,7 +320,7 @@ for band in args.bands.split(","):
         absorbers[sp] = func_abs
 
     # xfit
-    from faxsec.xfit import CrossFitAbsorber
+    from artsfax.xfit import CrossFitAbsorber
 
     for sp in halocarbons[band].keys():
         func_abs = CrossFitAbsorber(
@@ -331,7 +331,7 @@ for band in args.bands.split(","):
         absorbers[sp] = func_abs
 
     # continuum
-    from faxsec.continuum import H2OContinuum
+    from artsfax.continuum import H2OContinuum
 
     for sp in continuum.keys():
         absorbers[f"{sp}_continuum"] = H2OContinuum(frequency_grid=frequency_grid)

@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from faxsec import H2OContinuum, load_gas_optics
-from faxsec.continuum import ForeignContinuumAbsorber, SelfContinuumAbsorber
+from artsfax import H2OContinuum, load_gas_optics
+from artsfax.continuum import ForeignContinuumAbsorber, SelfContinuumAbsorber
 
 
 @pytest.fixture(scope="module")
