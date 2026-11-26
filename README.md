@@ -55,4 +55,6 @@ tau = gas_optics.optical_depth_from_ds(atmosphere)  # species x layer x frequenc
   `python examples/rte_example.py --case rfmip --gas-optics fax`
 - `examples/train_ddq.py`, `examples/train_fgrid.py`: train on a DDQ
   quadrature or on a dense frequency grid.
+- `tools/train/train_artsfax.py`: FAX line models alone, on a given frequency grid
+  and (p, T) range.
 - `tools/cluster`: SLURM scripts for dense-grid training and line-by-line fluxes.
