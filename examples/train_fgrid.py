@@ -1,106 +1,17 @@
 # %%
 import argparse
 import logging
-from pathlib import Path
 
 import numpy as np
 import xarray as xr
 
-from artsfax.constants import (
-    DATA_DIR,
-    REF_PRESSURE,
-    REF_TEMPERATURE,
-    REF_VMR,
-    REFERENCE_VMR,
-    SELF_SCALING,
-)
-from artsfax.functional import FunctionalAbsorber, NoLogFunctionalAbsorber
+from artsfax.constants import DATA_DIR
 from artsfax.gas_optics import GasOptics, write_datatree
 from artsfax.log_config import setup_logging
-from artsfax.utils import (
-    DEFAULT_REFERENCE_MEMORY_BUDGET,
-    ensure_reference_dataset,
-    kayser_to_hz,
-    rayleigh_xsec_stamnes_2017,
-    reference_cache_path,
-    relative_to_data,
-    xsec_relevance_floor,
-)
+from artsfax.train import TRAINING_CONFIGS, band_config, train_fax
+from artsfax.utils import kayser_to_hz, rayleigh_xsec_stamnes_2017, relative_to_data
 
 logger = logging.getLogger(__name__)
-
-
-# Named training configurations. Each gives the reference point the fit is
-# anchored at, the forms fitted, and how the (p, T) training sample is drawn;
-# bands may override any of it.
-TRAINING_CONFIGS = {
-    "legacy": {
-        "ref_pressure": REF_PRESSURE,
-        "ref_temperature": REF_TEMPERATURE,
-        "temperature_variable": "dT",
-        "formulation": "log",
-        "pressure_form": "Hinge",
-        "temperature_form": "Rational",
-        "max_iter": 10,
-        "sampling": {"method": "natural", "p_range": [0.01, 110000], "N_samples": 1000},
-    },
-    "atmospheric": {
-        "ref_pressure": 1.0e4,
-        "ref_temperature": 240.0,
-        "temperature_variable": "dT",
-        "formulation": "log",
-        "pressure_form": "Hinge",
-        "temperature_form": "Rational",
-        "max_iter": 10,
-        "sampling": {
-            "method": "atmospheric",
-            "p_range": [0.01, 1.1e5],
-            "N_samples": 2000,
-            "pressure_weight": 0.5,
-        },
-        # Shortwave surface flux is a column-transmission problem, so equal air
-        # mass per stratum is the natural design. The longwave emits from every
-        # layer and takes part of its OLR from the stratosphere, so it needs a
-        # compromise.
-        "bands": {
-            "LW": {"sampling": {"pressure_weight": 0.5}},
-            "SW": {"sampling": {"pressure_weight": 1.0}},
-        },
-    },
-    "atmospheric_nolog": {
-        "ref_pressure": 1.0e4,
-        "ref_temperature": 240.0,
-        "temperature_variable": "dT",
-        "formulation": "nolog",
-        "pressure_form": "ShiftedReciprocalLaurent",
-        "temperature_form": "Rational",
-        "max_iter": 4,
-        "sampling": {
-            "method": "atmospheric",
-            "p_range": [0.01, 1.1e5],
-            "N_samples": 2000,
-            "pressure_weight": 0.5,
-        },
-        "bands": {
-            "LW": {"sampling": {"pressure_weight": 0.5}},
-            "SW": {"sampling": {"pressure_weight": 1.0}},
-        },
-    },
-}
-
-FORMULATIONS = {"log": FunctionalAbsorber, "nolog": NoLogFunctionalAbsorber}
-
-
-def band_config(config: dict, band: str) -> dict:
-    """Configuration for one band, with any band overrides merged in."""
-    resolved = {k: v for k, v in config.items() if k != "bands"}
-    resolved["sampling"] = dict(resolved["sampling"])
-    for key, value in config.get("bands", {}).get(band, {}).items():
-        if key == "sampling":
-            resolved["sampling"].update(value)
-        else:
-            resolved[key] = value
-    return resolved
 
 
 def parse_args() -> argparse.Namespace:
@@ -138,87 +49,6 @@ def parse_args() -> argparse.Namespace:
         help="Frequencies fitted per process (default: %(default)s)",
     )
     return parser.parse_args()
-
-
-def train_fax(
-    species: str,
-    arts_tag: tuple[str] | None,
-    frequency_grid: np.ndarray,
-    reference_cache_dir: str | Path,
-    sampling_kwargs: dict | None = None,
-    ref_pressure: float = REF_PRESSURE,
-    ref_temperature: float = REF_TEMPERATURE,
-    temperature_variable: str = "dT",
-    pressure_form: str = "Hinge",
-    temperature_form: str = "Rational",
-    formulation: str = "log",
-    max_iter: int = 10,
-    memory_budget: int = DEFAULT_REFERENCE_MEMORY_BUDGET,
-    save_path: str | Path | None = None,
-    frequency_chunk: int = 2000,
-    n_workers: int | None = None,
-) -> FunctionalAbsorber:
-    """Train a FAX model for a given species and frequency grid.
-
-    Parameters
-    ----------
-    species : str
-        The species to train the FAX model for.
-    frequency_grid : np.ndarray
-        The frequency grid in Hz.
-    reference_cache_dir : Path | None, optional
-        The directory to cache reference datasets, by default None.
-    memory_budget : int, optional
-        Bytes of ARTS working memory per reference chunk.
-    save_path : Path | None, optional
-        File the fitted coefficients are written to as chunks finish; chunks
-        already in it are not refitted.
-    """
-
-    ref_vmr = REFERENCE_VMR.get(species, REF_VMR)
-
-    ensure_reference_dataset(
-        species=species,
-        frequency_grid=frequency_grid,
-        arts_tag=arts_tag,
-        cache_path=reference_cache_path(
-            species=species,
-            arts_tag=arts_tag,
-            cache_dir=reference_cache_dir,
-        ),
-        ref_pressure=ref_pressure,
-        ref_temperature=ref_temperature,
-        ref_vmr=ref_vmr,
-        sampling_kwargs=sampling_kwargs,
-        arts_reference_kwargs={"memory_budget": memory_budget},
-    )
-
-    func_abs = FORMULATIONS[formulation](
-        species=species,
-        pressure_form_name=pressure_form,
-        temperature_form_name=temperature_form,
-        frequency_grid=frequency_grid,
-        self_scaling=SELF_SCALING.get(species, 0.0),
-        xsec_floor=xsec_relevance_floor(species),
-        temperature_variable=temperature_variable,
-        ref_pressure=ref_pressure,
-        ref_temperature=ref_temperature,
-        ref_vmr=ref_vmr,
-    )
-
-    func_abs.train_in_frequency_chunks(
-        reference_xsec=reference_cache_path(
-            species=species,
-            arts_tag=arts_tag,
-            cache_dir=reference_cache_dir,
-        ),
-        frequency_chunk=frequency_chunk,
-        n_workers=n_workers,
-        save_path=save_path,
-        max_iter=max_iter,
-    )
-
-    return func_abs
 
 
 # %% Train DDQ LW FAX models
@@ -328,7 +158,6 @@ def main() -> None:
         )
 
         config = band_config(base_config, band)
-        sampling_kwargs = config["sampling"]
         reference_cache_dir = DATA_DIR / "reference" / f"{case_name}{reference_suffix}"
         # partial fits are per formulation, so they cannot be shared across configs
         species_dir = DATA_DIR / "ff" / f"species_{case_name}_{args.config}{suffix}"
@@ -340,15 +169,8 @@ def main() -> None:
                 species=sp,
                 arts_tag=lines[band][sp],
                 frequency_grid=frequency_grid,
-                reference_cache_dir=reference_cache_dir,
-                sampling_kwargs=sampling_kwargs,
-                ref_pressure=config["ref_pressure"],
-                ref_temperature=config["ref_temperature"],
-                temperature_variable=config["temperature_variable"],
-                pressure_form=config["pressure_form"],
-                temperature_form=config["temperature_form"],
-                formulation=config["formulation"],
-                max_iter=config["max_iter"],
+                reference_dir=reference_cache_dir,
+                config=config,
                 memory_budget=reference_memory_budget,
                 save_path=species_dir / f"{sp}.nc",
                 frequency_chunk=args.frequency_chunk,
